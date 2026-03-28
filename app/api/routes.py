@@ -9,6 +9,7 @@ from app.core.pipeline import run_pipeline
 from app.services import (
     build_output_target,
     build_config_payload,
+    check_fns_status,
     ensure_runtime_environment,
     job_store,
     normalize_output_dir,
@@ -143,6 +144,15 @@ async def get_admin_settings(
 ) -> dict[str, Any]:
     _require_access(authorization, access_cookie)
     return build_admin_settings_payload()
+
+
+@router.get("/api/admin/fns-status")
+async def get_admin_fns_status(
+    authorization: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+) -> dict[str, Any]:
+    _require_access(authorization, access_cookie)
+    return check_fns_status()
 
 
 @router.put("/api/admin/settings")

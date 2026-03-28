@@ -15,6 +15,9 @@
       --accent-2: #285943;
       --warn: #9d3d2d;
       --changed: #fff1ce;
+      --danger-soft: #fff0ec;
+      --success-soft: #edf8f2;
+      --info-soft: #eff5ff;
     }
     * { box-sizing: border-box; }
     body {
@@ -66,6 +69,10 @@
     }
     textarea { min-height: 160px; resize: vertical; }
     .changed { background: var(--changed); }
+    .input-invalid {
+      border-color: var(--warn);
+      background: var(--danger-soft);
+    }
     .action-row {
       display: flex;
       flex-wrap: wrap;
@@ -87,6 +94,55 @@
     }
     .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
     .muted { color: var(--muted); }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 20px 0 16px;
+    }
+    .metric {
+      border-radius: 18px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(248,241,229,.88));
+      box-shadow: 0 16px 38px rgba(54, 45, 32, .08);
+    }
+    .metric strong {
+      display: block;
+      font-size: 26px;
+      margin-top: 6px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.success { background: var(--success-soft); color: #1e6a48; }
+    .pill.warn { background: #fff4e4; color: #9a5a15; }
+    .pill.error { background: var(--danger-soft); color: #9d3d2d; }
+    .pill.info { background: var(--info-soft); color: #2e5fa8; }
+    .status-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .status-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: #fff;
+    }
+    .field-hint {
+      margin-top: 6px;
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .field-hint.error { color: var(--warn); }
+    .field-hint.success { color: #1e6a48; }
   </style>
 </head>
 <body>
@@ -101,6 +157,29 @@
     <h1>后台设置</h1>
     <p class="lead">在这里维护 Fast Note Sync 和服务访问配置。剪贴板导入只负责填表，不会自动保存到服务端。</p>
 
+    <section class="overview-grid">
+      <article class="metric">
+        <span class="muted">顶部概览</span>
+        <strong id="metric-auth">-</strong>
+        <span class="muted">访问保护</span>
+      </article>
+      <article class="metric">
+        <span class="muted">默认输出</span>
+        <strong id="metric-target">-</strong>
+        <span class="muted">local / fns</span>
+      </article>
+      <article class="metric">
+        <span class="muted">FNS Vault</span>
+        <strong id="metric-vault">-</strong>
+        <span class="muted">当前同步目标</span>
+      </article>
+      <article class="metric">
+        <span class="muted">运行时配置</span>
+        <strong id="metric-runtime">-</strong>
+        <span class="muted">覆盖字段数</span>
+      </article>
+    </section>
+
     <section class="card">
       <h2>FNS 导入</h2>
       <label for="fns-json-input">粘贴 FNS JSON</label>
@@ -114,7 +193,16 @@
     <div class="status-grid">
       <section class="card">
         <h2>当前状态</h2>
-        <pre id="settings-summary">加载中...</pre>
+        <div class="status-stack">
+          <div class="status-card">
+            <div class="pill info" id="fns-health-pill">待检测</div>
+            <p class="muted" id="fns-health-message">尚未检测 FNS 连接。</p>
+            <div class="action-row" style="margin-top: 10px;">
+              <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
+            </div>
+          </div>
+          <pre id="fns-status-result">等待检测</pre>
+        </div>
       </section>
       <section class="card">
         <h2>操作结果</h2>
@@ -128,24 +216,29 @@
         <div>
           <label for="fns-base-url">FNS 基础地址</label>
           <input id="fns-base-url" placeholder="https://obsync.example.com" />
+          <div class="field-hint" id="hint-fns-base-url"></div>
         </div>
         <div>
           <label for="fns-vault">Vault</label>
           <input id="fns-vault" placeholder="obsidian" />
+          <div class="field-hint" id="hint-fns-vault"></div>
         </div>
         <div>
           <label for="fns-target-dir">目标目录</label>
           <input id="fns-target-dir" placeholder="00_Inbox/微信公众号" />
+          <div class="field-hint" id="hint-fns-target-dir"></div>
         </div>
         <div>
           <label for="fns-token">FNS Token</label>
           <input id="fns-token" type="password" placeholder="留空则保持不变" />
           <div class="muted" id="fns-token-meta"></div>
+          <div class="field-hint" id="hint-fns-token"></div>
         </div>
         <div>
           <label for="access-token">服务访问口令</label>
           <input id="access-token" type="password" placeholder="留空则保持不变" />
           <div class="muted" id="access-token-meta"></div>
+          <div class="field-hint" id="hint-access-token"></div>
         </div>
       </div>
       <div class="action-row">
@@ -156,9 +249,25 @@
     </section>
   </main>
   <script>
-    const summaryEl = document.getElementById("settings-summary");
     const resultEl = document.getElementById("settings-result");
+    const fnsStatusEl = document.getElementById("fns-status-result");
     const clearFields = new Set();
+    const validators = {
+      "fns-base-url": (value) => {
+        if (!value) return { ok: false, text: "请输入 FNS 基础地址。" };
+        return /^https?:\/\//i.test(value)
+          ? { ok: true, text: "地址格式正确。" }
+          : { ok: false, text: "必须以 http:// 或 https:// 开头。" };
+      },
+      "fns-vault": (value) => value ? { ok: true, text: "Vault 已填写。" } : { ok: false, text: "请输入 vault 名称。" },
+      "fns-target-dir": (value) => value ? { ok: true, text: "将同步到该目录。" } : { ok: false, text: "请输入目标目录。" },
+      "fns-token": (value) => value || document.getElementById("fns-token-meta").textContent.includes("已配置")
+        ? { ok: true, text: "FNS Token 可用。" }
+        : { ok: false, text: "未配置 FNS Token 时无法写入 FNS。" },
+      "access-token": (value) => value || document.getElementById("access-token-meta").textContent.includes("已配置")
+        ? { ok: true, text: "访问口令可用。" }
+        : { ok: false, text: "建议配置访问口令，避免后台裸露。" }
+    };
 
     function markChanged(id) {
       document.getElementById(id).classList.add("changed");
@@ -174,6 +283,42 @@
         lines.push(JSON.stringify(data, null, 2));
       }
       resultEl.textContent = lines.join("\n\n");
+    }
+
+    function setFnsHealth(state, message) {
+      const pill = document.getElementById("fns-health-pill");
+      pill.className = `pill ${state}`;
+      pill.textContent = state === "success" ? "连接正常" : state === "warn" ? "部分可用" : state === "error" ? "连接异常" : "待检测";
+      document.getElementById("fns-health-message").textContent = message;
+    }
+
+    function updateOverview(data) {
+      document.getElementById("metric-auth").textContent = data.auth_enabled ? "已开启" : "未开启";
+      document.getElementById("metric-target").textContent = data.default_output_target || "-";
+      document.getElementById("metric-vault").textContent = data.fns_vault || "未配置";
+      document.getElementById("metric-runtime").textContent = String((data.runtime_overrides || []).length);
+    }
+
+    function setHint(id, state, text) {
+      const input = document.getElementById(id);
+      const hint = document.getElementById(`hint-${id}`);
+      hint.textContent = text;
+      hint.className = `field-hint ${state ? "success" : "error"}`;
+      input.classList.toggle("input-invalid", !state);
+    }
+
+    function validateField(id) {
+      const value = document.getElementById(id).value.trim();
+      const result = validators[id](value);
+      setHint(id, result.ok, result.text);
+      return result.ok;
+    }
+
+    function validateForm() {
+      const ids = ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token", "access-token"];
+      const allValid = ids.every((id) => validateField(id));
+      document.getElementById("save-settings").disabled = !allValid;
+      return allValid;
     }
 
     function parseFnsJson(rawText) {
@@ -227,9 +372,32 @@
       document.getElementById("access-token").value = "";
       document.getElementById("fns-token-meta").textContent = data.fns_token_configured ? `已配置：${data.fns_token_masked}` : "当前未配置";
       document.getElementById("access-token-meta").textContent = data.access_token_configured ? `已配置：${data.access_token_masked}` : "当前未配置";
-      summaryEl.textContent = JSON.stringify(data, null, 2);
+      updateOverview(data);
       clearFields.clear();
       resetChanged();
+      validateForm();
+      await checkFnsStatus();
+    }
+
+    async function checkFnsStatus() {
+      setFnsHealth("info", "正在检测 FNS 连接...");
+      const response = await fetch("/api/admin/fns-status");
+      const data = await response.json();
+      if (!response.ok) {
+        setFnsHealth("error", data.detail || "检测失败");
+        fnsStatusEl.textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+      if (!data.configured) {
+        setFnsHealth("warn", data.message || "FNS 尚未配置完整。");
+      } else if (data.connected && data.vault_exists) {
+        setFnsHealth("success", `已连接 ${data.base_url}，vault ${data.vault_name} 可用。`);
+      } else if (data.connected) {
+        setFnsHealth("warn", data.message || "连接正常，但目标 vault 不存在。");
+      } else {
+        setFnsHealth("error", data.message || "连接失败。");
+      }
+      fnsStatusEl.textContent = JSON.stringify(data, null, 2);
     }
 
     document.getElementById("paste-fns-button").addEventListener("click", async () => {
@@ -260,6 +428,7 @@
       document.getElementById("fns-token-meta").textContent = "本次保存会清空 FNS Token。";
       markChanged("fns-token");
       setResult("已标记：保存时会清空 FNS Token。");
+      validateForm();
     });
 
     document.getElementById("clear-access-token").addEventListener("click", () => {
@@ -268,6 +437,7 @@
       document.getElementById("access-token-meta").textContent = "本次保存会清空访问口令。";
       markChanged("access-token");
       setResult("已标记：保存时会清空服务访问口令。");
+      validateForm();
     });
 
     document.getElementById("save-settings").addEventListener("click", async () => {
@@ -300,6 +470,17 @@
         return;
       }
       await loadSettings();
+    });
+
+    document.getElementById("check-fns-button").addEventListener("click", () => {
+      checkFnsStatus().catch((error) => setFnsHealth("error", String(error)));
+    });
+
+    ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token", "access-token"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", () => {
+        clearFields.delete(id.replace(/-/g, "_"));
+        validateForm();
+      });
     });
 
     document.getElementById("logout-button").addEventListener("click", async () => {

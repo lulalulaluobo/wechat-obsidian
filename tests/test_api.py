@@ -121,6 +121,9 @@ class ApiTests(unittest.TestCase):
         self.assertIn("从剪贴板导入 FNS", text)
         self.assertIn("解析并填充", text)
         self.assertIn('id="fns-json-input"', text)
+        self.assertIn("顶部概览", text)
+        self.assertIn("检测 FNS 连接", text)
+        self.assertIn('id="fns-status-result"', text)
 
     def test_admin_settings_masks_secret_values(self):
         env = {
@@ -174,6 +177,34 @@ class ApiTests(unittest.TestCase):
         config_data = config_response.json()
         self.assertTrue(config_data["fns_enabled"])
         self.assertEqual(config_data["fns_base_url"], "https://obsync.example.com")
+
+    def test_admin_fns_status_returns_connection_summary(self):
+        env = {
+            "WECHAT_MD_ACCESS_TOKEN": "secret-token",
+            "WECHAT_MD_FNS_BASE_URL": "https://obsync.example.com",
+            "WECHAT_MD_FNS_TOKEN": "fns-token",
+            "WECHAT_MD_FNS_VAULT": "obsidian",
+        }
+        fake_status = {
+            "configured": True,
+            "connected": True,
+            "user": {"username": "luluen"},
+            "vault_exists": True,
+            "vault_name": "obsidian",
+            "vault_count": 1,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with patch("app.api.routes.check_fns_status", return_value=fake_status):
+                response = self.client.get(
+                    "/api/admin/fns-status",
+                    headers={"Authorization": "Bearer secret-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["connected"])
+        self.assertTrue(data["vault_exists"])
+        self.assertEqual(data["user"]["username"], "luluen")
 
 
 if __name__ == "__main__":

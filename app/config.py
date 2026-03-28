@@ -93,6 +93,8 @@ def build_admin_settings_payload() -> dict[str, Any]:
     runtime_values = load_runtime_config(settings.runtime_config_path)
     return {
         "runtime_config_path": str(settings.runtime_config_path),
+        "auth_enabled": bool(settings.access_token),
+        "default_output_target": "fns" if settings.fns_enabled else "local",
         "fns_base_url": settings.fns_base_url or "",
         "fns_vault": settings.fns_vault or "",
         "fns_target_dir": settings.fns_target_dir or "00_Inbox/微信公众号",

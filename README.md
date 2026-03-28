@@ -47,6 +47,7 @@ Runtime settings edited from the web UI are stored in `data/runtime-config.json`
 ## Settings UI
 
 - `/settings` provides a server-backed admin settings page.
+- The settings page now includes overview cards, FNS connection detection, and inline form validation hints.
 - FNS config can be imported from clipboard or pasted JSON in this format:
   - `api`
   - `apiToken`

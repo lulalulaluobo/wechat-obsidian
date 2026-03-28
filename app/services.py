@@ -160,6 +160,61 @@ def build_config_payload() -> dict[str, Any]:
     }
 
 
+def check_fns_status(http_session=None) -> dict[str, Any]:
+    settings = get_settings()
+    payload: dict[str, Any] = {
+        "configured": settings.fns_enabled,
+        "connected": False,
+        "vault_exists": False,
+        "vault_name": settings.fns_vault,
+        "vault_count": 0,
+        "user": None,
+        "base_url": settings.fns_base_url,
+        "message": "",
+    }
+    if not settings.fns_enabled:
+        payload["message"] = "FNS 尚未配置完整"
+        return payload
+
+    session = http_session or requests.Session()
+    headers = {"token": str(settings.fns_token)}
+    try:
+        user_response = session.get(
+            f"{settings.fns_base_url}/api/user/info",
+            headers=headers,
+            timeout=max(settings.default_timeout, 15),
+        )
+        user_response.raise_for_status()
+        vault_response = session.get(
+            f"{settings.fns_base_url}/api/vault",
+            headers=headers,
+            timeout=max(settings.default_timeout, 15),
+        )
+        vault_response.raise_for_status()
+        user_data = user_response.json()
+        vault_data = vault_response.json()
+    except requests.RequestException as error:
+        payload["message"] = f"连接失败: {error}"
+        return payload
+    except ValueError:
+        payload["message"] = "FNS 返回了无法解析的 JSON"
+        return payload
+
+    user_block = user_data.get("data") if isinstance(user_data, dict) else None
+    vault_list = vault_data.get("data") if isinstance(vault_data, dict) else []
+    if not isinstance(vault_list, list):
+        vault_list = []
+    payload["connected"] = True
+    payload["user"] = user_block if isinstance(user_block, dict) else None
+    payload["vault_count"] = len(vault_list)
+    payload["vault_exists"] = any(
+        isinstance(item, dict) and str(item.get("vault") or "") == str(settings.fns_vault or "")
+        for item in vault_list
+    )
+    payload["message"] = "连接正常" if payload["vault_exists"] else "连接正常，但目标 vault 不存在"
+    return payload
+
+
 def build_output_target(output_target: str | None, settings=None) -> str:
     settings = settings or get_settings()
     normalized = (output_target or "").strip().lower()
