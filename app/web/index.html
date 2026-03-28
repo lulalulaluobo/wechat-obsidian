@@ -72,8 +72,22 @@
     }
     .toolbar {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 14px;
+    }
+    .nav {
+      display: flex;
+      gap: 10px;
+    }
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #fff;
+      background: var(--accent);
     }
     .toolbar button {
       width: auto;
@@ -97,6 +111,10 @@
 <body>
   <main>
     <div class="toolbar">
+      <div class="nav">
+        <a href="/">转换</a>
+        <a href="/settings">设置</a>
+      </div>
       <button id="logout-button">退出登录</button>
     </div>
     <h1>Wechat MD Server</h1>

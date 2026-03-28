@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wechat MD Server Settings</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --card: #fffdf8;
+      --ink: #1f2430;
+      --muted: #6a7280;
+      --line: #ded4c2;
+      --accent: #c35f2d;
+      --accent-2: #285943;
+      --warn: #9d3d2d;
+      --changed: #fff1ce;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(195,95,45,.14), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(40,89,67,.1), transparent 26%),
+        var(--bg);
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 40px 20px 56px; }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .nav { display: flex; gap: 10px; }
+    .nav a, .toolbar button, .action-row button {
+      text-decoration: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+      font: inherit;
+    }
+    .toolbar button { background: var(--accent-2); }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    p.lead { margin: 0 0 24px; color: var(--muted); }
+    .card {
+      background: rgba(255,253,248,.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 18px 50px rgba(46, 38, 26, .08);
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
+    input, textarea {
+      width: 100%;
+      font: inherit;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    .changed { background: var(--changed); }
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .action-row button.secondary { background: var(--accent-2); }
+    .action-row button.warn { background: var(--warn); }
+    pre {
+      margin: 0;
+      padding: 14px;
+      border-radius: 14px;
+      background: #231f1a;
+      color: #f2eee7;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 140px;
+    }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="toolbar">
+      <div class="nav">
+        <a href="/">转换</a>
+        <a href="/settings">设置</a>
+      </div>
+      <button id="logout-button">退出登录</button>
+    </div>
+    <h1>后台设置</h1>
+    <p class="lead">在这里维护 Fast Note Sync 和服务访问配置。剪贴板导入只负责填表，不会自动保存到服务端。</p>
+
+    <section class="card">
+      <h2>FNS 导入</h2>
+      <label for="fns-json-input">粘贴 FNS JSON</label>
+      <textarea id="fns-json-input" placeholder='{"api":"https://...","apiToken":"...","vault":"obsidian"}'></textarea>
+      <div class="action-row">
+        <button id="paste-fns-button">从剪贴板导入 FNS</button>
+        <button id="parse-fns-button" class="secondary">解析并填充</button>
+      </div>
+    </section>
+
+    <div class="status-grid">
+      <section class="card">
+        <h2>当前状态</h2>
+        <pre id="settings-summary">加载中...</pre>
+      </section>
+      <section class="card">
+        <h2>操作结果</h2>
+        <pre id="settings-result">等待操作</pre>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top: 16px;">
+      <h2>服务配置</h2>
+      <div class="grid">
+        <div>
+          <label for="fns-base-url">FNS 基础地址</label>
+          <input id="fns-base-url" placeholder="https://obsync.example.com" />
+        </div>
+        <div>
+          <label for="fns-vault">Vault</label>
+          <input id="fns-vault" placeholder="obsidian" />
+        </div>
+        <div>
+          <label for="fns-target-dir">目标目录</label>
+          <input id="fns-target-dir" placeholder="00_Inbox/微信公众号" />
+        </div>
+        <div>
+          <label for="fns-token">FNS Token</label>
+          <input id="fns-token" type="password" placeholder="留空则保持不变" />
+          <div class="muted" id="fns-token-meta"></div>
+        </div>
+        <div>
+          <label for="access-token">服务访问口令</label>
+          <input id="access-token" type="password" placeholder="留空则保持不变" />
+          <div class="muted" id="access-token-meta"></div>
+        </div>
+      </div>
+      <div class="action-row">
+        <button id="clear-fns-token" class="warn">清空 FNS Token</button>
+        <button id="clear-access-token" class="warn">清空访问口令</button>
+        <button id="save-settings" class="secondary">保存并生效</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    const summaryEl = document.getElementById("settings-summary");
+    const resultEl = document.getElementById("settings-result");
+    const clearFields = new Set();
+
+    function markChanged(id) {
+      document.getElementById(id).classList.add("changed");
+    }
+
+    function resetChanged() {
+      document.querySelectorAll(".changed").forEach((node) => node.classList.remove("changed"));
+    }
+
+    function setResult(message, data) {
+      const lines = [message];
+      if (data) {
+        lines.push(JSON.stringify(data, null, 2));
+      }
+      resultEl.textContent = lines.join("\n\n");
+    }
+
+    function parseFnsJson(rawText) {
+      let parsed;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (error) {
+        throw new Error("FNS 配置不是有效 JSON");
+      }
+      const missing = ["api", "apiToken", "vault"].filter((key) => !String(parsed[key] || "").trim());
+      if (missing.length) {
+        throw new Error(`FNS 配置缺少字段: ${missing.join(", ")}`);
+      }
+      const api = String(parsed.api).trim();
+      if (!/^https?:\/\//i.test(api)) {
+        throw new Error("FNS 基础地址格式无效，必须以 http:// 或 https:// 开头");
+      }
+      return {
+        fns_base_url: api.replace(/\/+$/, ""),
+        fns_token: String(parsed.apiToken).trim(),
+        fns_vault: String(parsed.vault).trim()
+      };
+    }
+
+    function applyFnsImport(parsed) {
+      document.getElementById("fns-base-url").value = parsed.fns_base_url;
+      document.getElementById("fns-vault").value = parsed.fns_vault;
+      document.getElementById("fns-token").value = parsed.fns_token;
+      markChanged("fns-base-url");
+      markChanged("fns-vault");
+      markChanged("fns-token");
+      clearFields.delete("fns_token");
+      document.getElementById("fns-token-meta").textContent = "本次已导入新的 FNS Token，保存后才会写入服务端。";
+      setResult("已识别 FNS 配置并填充表单。", {
+        fns_base_url: parsed.fns_base_url,
+        fns_vault: parsed.fns_vault,
+        fns_token: "已填入"
+      });
+    }
+
+    async function loadSettings() {
+      const response = await fetch("/api/admin/settings");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || JSON.stringify(data));
+      }
+      document.getElementById("fns-base-url").value = data.fns_base_url || "";
+      document.getElementById("fns-vault").value = data.fns_vault || "";
+      document.getElementById("fns-target-dir").value = data.fns_target_dir || "";
+      document.getElementById("fns-token").value = "";
+      document.getElementById("access-token").value = "";
+      document.getElementById("fns-token-meta").textContent = data.fns_token_configured ? `已配置：${data.fns_token_masked}` : "当前未配置";
+      document.getElementById("access-token-meta").textContent = data.access_token_configured ? `已配置：${data.access_token_masked}` : "当前未配置";
+      summaryEl.textContent = JSON.stringify(data, null, 2);
+      clearFields.clear();
+      resetChanged();
+    }
+
+    document.getElementById("paste-fns-button").addEventListener("click", async () => {
+      try {
+        const rawText = await navigator.clipboard.readText();
+        document.getElementById("fns-json-input").value = rawText;
+        applyFnsImport(parseFnsJson(rawText));
+      } catch (error) {
+        setResult(
+          error && error.message && error.message.includes("JSON")
+            ? error.message
+            : "读取剪贴板失败，请改用手动粘贴 JSON 文本。"
+        );
+      }
+    });
+
+    document.getElementById("parse-fns-button").addEventListener("click", () => {
+      try {
+        applyFnsImport(parseFnsJson(document.getElementById("fns-json-input").value.trim()));
+      } catch (error) {
+        setResult(String(error.message || error));
+      }
+    });
+
+    document.getElementById("clear-fns-token").addEventListener("click", () => {
+      clearFields.add("fns_token");
+      document.getElementById("fns-token").value = "";
+      document.getElementById("fns-token-meta").textContent = "本次保存会清空 FNS Token。";
+      markChanged("fns-token");
+      setResult("已标记：保存时会清空 FNS Token。");
+    });
+
+    document.getElementById("clear-access-token").addEventListener("click", () => {
+      clearFields.add("access_token");
+      document.getElementById("access-token").value = "";
+      document.getElementById("access-token-meta").textContent = "本次保存会清空访问口令。";
+      markChanged("access-token");
+      setResult("已标记：保存时会清空服务访问口令。");
+    });
+
+    document.getElementById("save-settings").addEventListener("click", async () => {
+      const payload = {
+        fns_base_url: document.getElementById("fns-base-url").value.trim(),
+        fns_vault: document.getElementById("fns-vault").value.trim(),
+        fns_target_dir: document.getElementById("fns-target-dir").value.trim(),
+        clear_fields: Array.from(clearFields)
+      };
+      const fnsToken = document.getElementById("fns-token").value.trim();
+      const accessToken = document.getElementById("access-token").value.trim();
+      if (fnsToken) {
+        payload.fns_token = fnsToken;
+      }
+      if (accessToken) {
+        payload.access_token = accessToken;
+      }
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      setResult(response.ok ? "设置已保存并生效。" : "保存失败。", data);
+      if (!response.ok) {
+        return;
+      }
+      if (data.session_invalidated) {
+        window.location.href = "/";
+        return;
+      }
+      await loadSettings();
+    });
+
+    document.getElementById("logout-button").addEventListener("click", async () => {
+      await fetch("/api/session", { method: "DELETE" });
+      window.location.href = "/";
+    });
+
+    loadSettings().catch((error) => {
+      setResult(String(error));
+    });
+  </script>
+</body>
+</html>

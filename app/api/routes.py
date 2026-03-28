@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Cookie, File, Header, HTTPException, Request, Response, UploadFile
 
-from app.config import get_settings
+from app.config import build_admin_settings_payload, get_settings, save_runtime_config
 from app.core.pipeline import run_pipeline
 from app.services import (
     build_output_target,
@@ -134,6 +134,45 @@ async def create_session(request: Request, response: Response) -> dict[str, Any]
 async def delete_session(response: Response) -> dict[str, Any]:
     response.delete_cookie("wechat_md_access_token")
     return {"status": "ok"}
+
+
+@router.get("/api/admin/settings")
+async def get_admin_settings(
+    authorization: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+) -> dict[str, Any]:
+    _require_access(authorization, access_cookie)
+    return build_admin_settings_payload()
+
+
+@router.put("/api/admin/settings")
+async def update_admin_settings(
+    request: Request,
+    response: Response,
+    authorization: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+) -> dict[str, Any]:
+    _require_access(authorization, access_cookie)
+    payload = await _read_convert_payload(request)
+    clear_fields = payload.get("clear_fields")
+    if not isinstance(clear_fields, list):
+        clear_fields = []
+    try:
+        saved = save_runtime_config(payload, clear_fields=clear_fields)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    settings = get_settings()
+    session_invalidated = False
+    if "access_token" in saved and settings.access_token != access_cookie:
+        session_invalidated = True
+        response.delete_cookie("wechat_md_access_token")
+
+    return {
+        "status": "success",
+        "session_invalidated": session_invalidated,
+        "settings": build_admin_settings_payload(),
+    }
 
 
 def _parse_bool(value: Any) -> bool:

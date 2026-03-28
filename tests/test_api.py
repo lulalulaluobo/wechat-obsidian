@@ -113,6 +113,68 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(unauthorized.status_code, 401)
         self.assertEqual(authorized.status_code, 200)
 
+    def test_settings_page_contains_fns_import_actions(self):
+        response = self.client.get("/settings")
+
+        self.assertEqual(response.status_code, 200)
+        text = response.text
+        self.assertIn("从剪贴板导入 FNS", text)
+        self.assertIn("解析并填充", text)
+        self.assertIn('id="fns-json-input"', text)
+
+    def test_admin_settings_masks_secret_values(self):
+        env = {
+            "WECHAT_MD_ACCESS_TOKEN": "secret-token",
+            "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
+            "WECHAT_MD_FNS_TOKEN": "fns-secret-token",
+            "WECHAT_MD_FNS_VAULT": "MainVault",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = self.client.get(
+                "/api/admin/settings",
+                headers={"Authorization": "Bearer secret-token"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["fns_base_url"], "https://fns.example.com")
+        self.assertTrue(data["fns_token_configured"])
+        self.assertNotIn("fns-secret-token", str(data))
+        self.assertTrue(data["access_token_configured"])
+
+    def test_admin_settings_put_updates_runtime_config_and_config_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_ACCESS_TOKEN": "secret-token",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                save_response = self.client.put(
+                    "/api/admin/settings",
+                    headers={"Authorization": "Bearer secret-token"},
+                    json={
+                        "fns_base_url": "https://obsync.example.com",
+                        "fns_token": "new-fns-token",
+                        "fns_vault": "obsidian",
+                        "fns_target_dir": "00_Inbox/微信公众号",
+                    },
+                )
+                config_response = self.client.get(
+                    "/api/config",
+                    headers={"Authorization": "Bearer secret-token"},
+                )
+
+            self.assertEqual(save_response.status_code, 200)
+            self.assertTrue(runtime_path.exists())
+            saved_text = runtime_path.read_text(encoding="utf-8")
+
+        self.assertIn("https://obsync.example.com", saved_text)
+        self.assertIn("new-fns-token", saved_text)
+        config_data = config_response.json()
+        self.assertTrue(config_data["fns_enabled"])
+        self.assertEqual(config_data["fns_base_url"], "https://obsync.example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

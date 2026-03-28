@@ -8,6 +8,7 @@ __pycache__/
 *.log
 .env
 .env.*
+data/runtime-config.json
 _integration_output/
 _integration_output_v2/
 _integration_output_tmp/
