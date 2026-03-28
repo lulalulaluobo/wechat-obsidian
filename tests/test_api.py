@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.main import app  # noqa: E402
+from app.auth import build_session_token, reset_login_rate_limit_state  # noqa: E402
+from app.config import get_settings, reset_admin_credentials  # noqa: E402
 
 
 class ApiTests(unittest.TestCase):
@@ -21,10 +24,16 @@ class ApiTests(unittest.TestCase):
         runtime_path = Path(self.temp_dir.name) / "runtime-config.json"
         self.env_patcher = patch.dict(
             os.environ,
-            {"WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path)},
+            {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_USERNAME": "admin",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+            },
             clear=False,
         )
         self.env_patcher.start()
+        reset_login_rate_limit_state()
         self.client = TestClient(app)
         self.runtime_path = runtime_path
 
@@ -74,6 +83,16 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def test_login_is_rate_limited_after_repeated_failures(self):
+        for _ in range(5):
+            response = self._login(password="wrong-password")
+            self.assertEqual(response.status_code, 401)
+
+        blocked = self._login(password="wrong-password")
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Retry-After", blocked.headers)
+
     def test_logout_blocks_protected_endpoints(self):
         self._login()
         self.client.delete("/api/session")
@@ -91,6 +110,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "success")
         self.assertEqual(response.json()["result"]["title"], "示例")
+
+    def test_login_cookie_uses_secure_flag_when_enabled(self):
+        with patch.dict(os.environ, {"WECHAT_MD_SESSION_COOKIE_SECURE": "true"}, clear=False):
+            response = self._login()
+
+        self.assertEqual(response.status_code, 200)
+        cookie_header = response.headers.get("set-cookie", "")
+        self.assertIn("Secure", cookie_header)
 
     def test_convert_defaults_to_fns_when_configured(self):
         self._login()
@@ -129,6 +156,92 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(data["sync"]["path"], "00_Inbox/微信公众号/示例.md")
         mocked_sync.assert_called_once()
 
+    def test_convert_uses_internal_workdir_for_fns_and_cleans_up_on_success(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "fns_base_url": "https://fns.example.com",
+                "fns_token": "fns-token",
+                "fns_vault": "MainVault",
+                "fns_target_dir": "00_Inbox/微信公众号",
+                "cleanup_temp_on_success": True,
+            },
+        )
+        captured: dict[str, Path] = {}
+
+        def fake_run_pipeline(url, output_base_dir, save_html, timeout):
+            base_dir = Path(output_base_dir)
+            captured["base_dir"] = base_dir
+            article_dir = base_dir / "01_示例"
+            article_dir.mkdir(parents=True, exist_ok=True)
+            markdown_path = article_dir / "示例.md"
+            markdown_path.write_text("# 示例\n\n正文", encoding="utf-8")
+            return {
+                "title": "示例",
+                "folder_name": "01_示例",
+                "markdown_file": str(markdown_path),
+                "output_dir": str(article_dir),
+            }
+
+        with patch("app.api.routes.run_pipeline", side_effect=fake_run_pipeline):
+            with patch(
+                "app.api.routes.sync_result_to_output",
+                return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
+            ):
+                response = self.client.post(
+                    "/api/convert",
+                    json={"url": "https://mp.weixin.qq.com/s/example"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("workdir", str(captured["base_dir"]))
+        self.assertNotEqual(captured["base_dir"], Path(r"D:\obsidian\00_Inbox"))
+        self.assertFalse(captured["base_dir"].exists())
+
+    def test_convert_retains_internal_workdir_when_cleanup_disabled(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "fns_base_url": "https://fns.example.com",
+                "fns_token": "fns-token",
+                "fns_vault": "MainVault",
+                "fns_target_dir": "00_Inbox/微信公众号",
+                "cleanup_temp_on_success": False,
+            },
+        )
+        captured: dict[str, Path] = {}
+
+        def fake_run_pipeline(url, output_base_dir, save_html, timeout):
+            base_dir = Path(output_base_dir)
+            captured["base_dir"] = base_dir
+            article_dir = base_dir / "01_示例"
+            article_dir.mkdir(parents=True, exist_ok=True)
+            markdown_path = article_dir / "示例.md"
+            markdown_path.write_text("# 示例\n\n正文", encoding="utf-8")
+            return {
+                "title": "示例",
+                "folder_name": "01_示例",
+                "markdown_file": str(markdown_path),
+                "output_dir": str(article_dir),
+            }
+
+        with patch("app.api.routes.run_pipeline", side_effect=fake_run_pipeline):
+            with patch(
+                "app.api.routes.sync_result_to_output",
+                return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
+            ):
+                response = self.client.post(
+                    "/api/convert",
+                    json={"url": "https://mp.weixin.qq.com/s/example"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(captured["base_dir"].exists())
+        self.assertIn("workdir", str(captured["base_dir"]))
+        shutil.rmtree(captured["base_dir"], ignore_errors=True)
+
     def test_batch_from_text(self):
         self._login()
         with patch("app.api.routes.job_store.create_batch_job") as mocked:
@@ -161,6 +274,33 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["job_id"], "job-file")
+
+    def test_batch_uses_internal_workdir_root_for_fns(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "fns_base_url": "https://fns.example.com",
+                "fns_token": "fns-token",
+                "fns_vault": "MainVault",
+                "fns_target_dir": "00_Inbox/微信公众号",
+            },
+        )
+        with patch("app.api.routes.job_store.create_batch_job") as mocked:
+            mocked.return_value = {
+                "job_id": "job-fns",
+                "total": 1,
+                "output_dir": str(Path(self.temp_dir.name) / "workdir"),
+            }
+            response = self.client.post(
+                "/api/batch",
+                data={"urls_text": "https://mp.weixin.qq.com/s/a"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        output_dir = mocked.call_args.kwargs["output_dir"]
+        self.assertIn("workdir", str(output_dir))
+        self.assertNotEqual(Path(output_dir), Path(r"D:\obsidian\00_Inbox"))
 
     def test_settings_page_contains_fns_import_actions_when_logged_in(self):
         self._login()
@@ -246,9 +386,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn("\"auth\"", saved_text)
         self.assertIn("\"user_settings\"", saved_text)
         self.assertIn("https://obsync.example.com", saved_text)
-        self.assertIn("new-fns-token", saved_text)
         self.assertIn("\"image_storage\"", saved_text)
         self.assertIn("\"image_mode\": \"s3_hotlink\"", saved_text)
+        self.assertNotIn("new-fns-token", saved_text)
+        self.assertNotIn("secret-1", saved_text)
         config_data = config_response.json()
         self.assertTrue(config_data["fns_enabled"])
         self.assertEqual(config_data["fns_base_url"], "https://obsync.example.com")
@@ -306,6 +447,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(change_response.status_code, 200)
         self.assertEqual(old_login.status_code, 401)
         self.assertEqual(new_login.status_code, 200)
+
+    def test_offline_reset_invalidates_existing_session_cookie(self):
+        self._login()
+        settings = get_settings()
+        cookie_value = build_session_token(settings.username, settings.password_hash, settings.session_secret)
+
+        reset_admin_credentials(new_password="offline-secret")
+
+        response = self.client.get(
+            "/api/config",
+            cookies={"wechat_md_session": cookie_value},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(self._login(password="offline-secret").status_code, 200)
 
 
 if __name__ == "__main__":

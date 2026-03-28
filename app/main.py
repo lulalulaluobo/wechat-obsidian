@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import Cookie, FastAPI
+from fastapi import Cookie, FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.api.routes import is_authenticated, router
@@ -11,6 +11,15 @@ from app.auth import SESSION_COOKIE_NAME
 
 app = FastAPI(title="wechat-md-server", version="0.1.0")
 app.include_router(router)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    return response
 
 
 @app.get("/", include_in_schema=False)

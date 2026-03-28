@@ -23,6 +23,8 @@ class FastNoteSyncTests(unittest.TestCase):
                 os.environ,
                 {
                     "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                    "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                    "WECHAT_MD_ADMIN_PASSWORD": "admin",
                     "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
                     "WECHAT_MD_FNS_TOKEN": "fns-token",
                     "WECHAT_MD_FNS_VAULT": "MainVault",
@@ -65,6 +67,8 @@ class FastNoteSyncTests(unittest.TestCase):
                 os.environ,
                 {
                     "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                    "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                    "WECHAT_MD_ADMIN_PASSWORD": "admin",
                     "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
                     "WECHAT_MD_FNS_TOKEN": "fns-token",
                     "WECHAT_MD_FNS_VAULT": "MainVault",

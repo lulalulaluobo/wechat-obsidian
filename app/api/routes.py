@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Cookie, File, HTTPException, Request, Response, UploadFile
 
-from app.auth import SESSION_COOKIE_NAME, build_session_token, verify_password, verify_session_token
+from app.auth import (
+    SESSION_COOKIE_NAME,
+    build_session_token,
+    check_login_allowed,
+    clear_login_failures,
+    record_login_failure,
+    session_cookie_secure_enabled,
+    verify_password,
+    verify_session_token,
+)
 from app.config import build_admin_settings_payload, get_settings, save_runtime_config, update_password
 from app.core.pipeline import run_pipeline
 from app.services import (
     build_config_payload,
     build_output_target,
+    cleanup_internal_workdir,
     check_fns_status,
+    create_internal_workdir,
     ensure_runtime_environment,
+    get_internal_workdir_root,
     job_store,
     normalize_output_dir,
     parse_links,
@@ -42,19 +55,37 @@ async def convert_article(
     if not url:
         raise HTTPException(status_code=400, detail="缺少微信文章链接 url")
 
-    output_dir = normalize_output_dir(payload.get("output_dir"))
     timeout = int(payload.get("timeout") or get_settings().default_timeout)
     save_html = _parse_bool(payload.get("save_html"))
     output_target = build_output_target(payload.get("output_target"))
+    settings = get_settings()
+    workspace: Path | None = None
+    output_dir = normalize_output_dir(payload.get("output_dir"))
+    if output_target == "fns":
+        workspace = create_internal_workdir("single")
+        output_dir = workspace
     ensure_runtime_environment()
 
     try:
         result = run_pipeline(url=url, output_base_dir=output_dir, save_html=save_html, timeout=timeout)
         sync = sync_result_to_output(result, output_target=output_target)
+        local_artifacts = {"retained": False, "workdir": None}
+        if workspace is not None:
+            if settings.cleanup_temp_on_success:
+                cleanup_internal_workdir(workspace)
+            else:
+                local_artifacts = {"retained": True, "workdir": str(workspace)}
     except Exception as error:
+        cleanup_internal_workdir(workspace)
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    return {"status": "success", "output_target": output_target, "result": result, "sync": sync}
+    return {
+        "status": "success",
+        "output_target": output_target,
+        "result": result,
+        "sync": sync,
+        "local_artifacts": local_artifacts,
+    }
 
 
 @router.post("/api/batch")
@@ -73,10 +104,10 @@ async def convert_batch(
     if not urls:
         raise HTTPException(status_code=400, detail="未解析到可用的微信文章链接")
 
-    output_dir = normalize_output_dir(payload.get("output_dir"))
     timeout = int(payload.get("timeout") or get_settings().default_timeout)
     save_html = _parse_bool(payload.get("save_html"))
     output_target = build_output_target(payload.get("output_target"))
+    output_dir = get_internal_workdir_root() if output_target == "fns" else normalize_output_dir(payload.get("output_dir"))
 
     job = job_store.create_batch_job(
         urls=urls,
@@ -113,15 +144,35 @@ async def create_session(request: Request, response: Response) -> dict[str, Any]
     username = str(payload.get("username") or "").strip()
     password = str(payload.get("password") or "")
     settings = get_settings()
+    client_host = request.client.host if request.client else "unknown"
+    throttle_key = f"{client_host}:{username}"
+
+    allowed, retry_after = check_login_allowed(throttle_key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="登录失败次数过多，请稍后再试",
+            headers={"Retry-After": str(retry_after or 60)},
+        )
 
     if username != settings.username or not verify_password(password, settings.password_hash):
+        still_allowed, retry_after = record_login_failure(throttle_key)
+        if not still_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="登录失败次数过多，请稍后再试",
+                headers={"Retry-After": str(retry_after or 60)},
+            )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    clear_login_failures(throttle_key)
 
     response.set_cookie(
         SESSION_COOKIE_NAME,
         build_session_token(settings.username, settings.password_hash, settings.session_secret),
         httponly=True,
         samesite="strict",
+        secure=session_cookie_secure_enabled(),
         max_age=7 * 24 * 60 * 60,
     )
     return {"status": "ok", "auth_enabled": True, "username": settings.username}
@@ -129,7 +180,7 @@ async def create_session(request: Request, response: Response) -> dict[str, Any]
 
 @router.delete("/api/session")
 async def delete_session(response: Response) -> dict[str, Any]:
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    response.delete_cookie(SESSION_COOKIE_NAME, samesite="strict", secure=session_cookie_secure_enabled())
     return {"status": "ok"}
 
 
@@ -196,6 +247,7 @@ async def update_admin_password(
         ),
         httponly=True,
         samesite="strict",
+        secure=session_cookie_secure_enabled(),
         max_age=7 * 24 * 60 * 60,
     )
     return {"status": "success"}

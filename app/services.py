@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -16,6 +17,25 @@ from app.core.pipeline import run_pipeline, sanitize_filename
 
 
 URL_PATTERN = re.compile(r"https?://mp\.weixin\.qq\.com/s/[^\s)>]+", re.IGNORECASE)
+
+
+def get_internal_workdir_root() -> Path:
+    settings = get_settings()
+    root = (settings.runtime_config_path.parent / "workdir").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def create_internal_workdir(prefix: str) -> Path:
+    workdir = get_internal_workdir_root() / f"{prefix}-{uuid.uuid4().hex[:12]}"
+    workdir.mkdir(parents=True, exist_ok=False)
+    return workdir
+
+
+def cleanup_internal_workdir(path: Path | None) -> None:
+    if path is None:
+        return
+    shutil.rmtree(path, ignore_errors=True)
 
 
 class JobStore:
@@ -67,16 +87,37 @@ class JobStore:
         output_target: str,
     ) -> None:
         ensure_runtime_environment()
+        settings = get_settings()
         self._update(job_id, status="running")
         for url in urls:
+            workspace: Path | None = None
             try:
-                result = run_pipeline(url=url, output_base_dir=output_dir, save_html=save_html, timeout=timeout)
+                active_output_dir = output_dir
+                if output_target == "fns":
+                    workspace = create_internal_workdir(f"batch-{job_id[:8]}")
+                    active_output_dir = workspace
+
+                result = run_pipeline(url=url, output_base_dir=active_output_dir, save_html=save_html, timeout=timeout)
                 sync = sync_result_to_output(result, output_target=output_target)
+                local_artifacts = {"retained": False, "workdir": None}
+                if workspace is not None:
+                    if settings.cleanup_temp_on_success:
+                        cleanup_internal_workdir(workspace)
+                    else:
+                        local_artifacts = {"retained": True, "workdir": str(workspace)}
                 self._append_result(
                     job_id,
-                    {"url": url, "status": "success", "result": result, "sync": sync, "output_target": output_target},
+                    {
+                        "url": url,
+                        "status": "success",
+                        "result": result,
+                        "sync": sync,
+                        "output_target": output_target,
+                        "local_artifacts": local_artifacts,
+                    },
                 )
             except Exception as error:  # pragma: no cover - exercised in integration flow
+                cleanup_internal_workdir(workspace)
                 self._append_result(job_id, {"url": url, "status": "error", "error": str(error)})
         self._finalize(job_id)
 
@@ -158,6 +199,7 @@ def build_config_payload() -> dict[str, Any]:
         "service_mode": "hybrid" if settings.fns_enabled else "local_only",
         "default_output_target": default_output_target,
         "auth_enabled": True,
+        "session_cookie_secure": settings.session_cookie_secure,
         "fns_enabled": settings.fns_enabled,
         "fns_base_url": settings.fns_base_url,
         "fns_vault": settings.fns_vault,
