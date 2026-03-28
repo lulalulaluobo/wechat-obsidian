@@ -70,9 +70,11 @@
 <body>
   <section class="panel">
     <h1>登录 Wechat MD Server</h1>
-    <p>当前服务启用了访问令牌保护。输入令牌后会写入安全 Cookie，并跳转到主页面。</p>
-    <label for="access-token">访问令牌</label>
-    <input id="access-token" type="password" autocomplete="current-password" />
+    <p>当前服务使用单用户登录。默认账号密码是 <code>admin/admin</code>，登录后才能执行抓取和维护 FNS 配置。</p>
+    <label for="username">用户名</label>
+    <input id="username" autocomplete="username" value="admin" />
+    <label for="password">密码</label>
+    <input id="password" type="password" autocomplete="current-password" value="admin" />
     <button id="login-submit">进入服务</button>
     <pre id="login-result">等待登录</pre>
   </section>
@@ -83,7 +85,10 @@
       const response = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: document.getElementById("access-token").value.trim() })
+        body: JSON.stringify({
+          username: document.getElementById("username").value.trim(),
+          password: document.getElementById("password").value
+        })
       });
       const data = await response.json();
       result.textContent = JSON.stringify(data, null, 2);

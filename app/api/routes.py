@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Cookie, File, Header, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, File, HTTPException, Request, Response, UploadFile
 
-from app.config import build_admin_settings_payload, get_settings, save_runtime_config
+from app.auth import SESSION_COOKIE_NAME, build_session_token, verify_password, verify_session_token
+from app.config import build_admin_settings_payload, get_settings, save_runtime_config, update_password
 from app.core.pipeline import run_pipeline
 from app.services import (
-    build_output_target,
     build_config_payload,
+    build_output_target,
     check_fns_status,
     ensure_runtime_environment,
     job_store,
@@ -24,22 +25,20 @@ router = APIRouter()
 
 @router.get("/api/config")
 async def get_config(
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     return build_config_payload()
 
 
 @router.post("/api/convert")
 async def convert_article(
     request: Request,
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     payload = await _read_convert_payload(request)
-    url = payload.get("url", "").strip()
+    url = str(payload.get("url") or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="缺少微信文章链接 url")
 
@@ -62,10 +61,9 @@ async def convert_article(
 async def convert_batch(
     request: Request,
     file: UploadFile | None = File(default=None),
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     payload = await _read_batch_payload(request, file=file)
     urls = parse_links(
         urls=payload.get("urls"),
@@ -100,10 +98,9 @@ async def convert_batch(
 @router.get("/api/jobs/{job_id}")
 async def get_job(
     job_id: str,
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     job = job_store.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -112,77 +109,96 @@ async def get_job(
 
 @router.post("/api/session")
 async def create_session(request: Request, response: Response) -> dict[str, Any]:
-    settings = get_settings()
-    if not settings.access_token:
-        return {"status": "disabled", "auth_enabled": False}
-
     payload = await _read_convert_payload(request)
-    token = str(payload.get("access_token") or "").strip()
-    if token != settings.access_token:
-        raise HTTPException(status_code=401, detail="访问令牌无效")
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "")
+    settings = get_settings()
+
+    if username != settings.username or not verify_password(password, settings.password_hash):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     response.set_cookie(
-        "wechat_md_access_token",
-        token,
+        SESSION_COOKIE_NAME,
+        build_session_token(settings.username, settings.password_hash, settings.session_secret),
         httponly=True,
         samesite="strict",
         max_age=7 * 24 * 60 * 60,
     )
-    return {"status": "ok", "auth_enabled": True}
+    return {"status": "ok", "auth_enabled": True, "username": settings.username}
 
 
 @router.delete("/api/session")
 async def delete_session(response: Response) -> dict[str, Any]:
-    response.delete_cookie("wechat_md_access_token")
+    response.delete_cookie(SESSION_COOKIE_NAME)
     return {"status": "ok"}
 
 
 @router.get("/api/admin/settings")
 async def get_admin_settings(
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     return build_admin_settings_payload()
 
 
 @router.get("/api/admin/fns-status")
 async def get_admin_fns_status(
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     return check_fns_status()
 
 
 @router.put("/api/admin/settings")
 async def update_admin_settings(
     request: Request,
-    response: Response,
-    authorization: str | None = Header(default=None),
-    access_cookie: str | None = Cookie(default=None, alias="wechat_md_access_token"),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
-    _require_access(authorization, access_cookie)
+    _require_access(session_cookie)
     payload = await _read_convert_payload(request)
     clear_fields = payload.get("clear_fields")
     if not isinstance(clear_fields, list):
         clear_fields = []
     try:
-        saved = save_runtime_config(payload, clear_fields=clear_fields)
+        save_runtime_config(payload, clear_fields=clear_fields)
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    settings = get_settings()
-    session_invalidated = False
-    if "access_token" in saved and settings.access_token != access_cookie:
-        session_invalidated = True
-        response.delete_cookie("wechat_md_access_token")
-
     return {
         "status": "success",
-        "session_invalidated": session_invalidated,
         "settings": build_admin_settings_payload(),
     }
+
+
+@router.put("/api/admin/password")
+async def update_admin_password(
+    request: Request,
+    response: Response,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    current_password = str(payload.get("current_password") or "")
+    new_password = str(payload.get("new_password") or "")
+    try:
+        updated = update_password(current_password=current_password, new_password=new_password)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    auth_user = updated["auth"]["user"]
+    session_secret = str(updated["auth"]["session_secret"])
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        build_session_token(
+            str(auth_user["username"]),
+            str(auth_user["password_hash"]),
+            session_secret,
+        ),
+        httponly=True,
+        samesite="strict",
+        max_age=7 * 24 * 60 * 60,
+    )
+    return {"status": "success"}
 
 
 def _parse_bool(value: Any) -> bool:
@@ -220,14 +236,13 @@ async def _read_batch_payload(request: Request, file: UploadFile | None) -> dict
     return payload
 
 
-def _require_access(authorization: str | None, access_cookie: str | None) -> None:
+def _require_access(session_cookie: str | None) -> None:
     settings = get_settings()
-    if not settings.access_token:
-        return
-
-    bearer = ""
-    if authorization and authorization.lower().startswith("bearer "):
-        bearer = authorization[7:].strip()
-    if bearer == settings.access_token or access_cookie == settings.access_token:
+    if verify_session_token(session_cookie, settings.username, settings.password_hash, settings.session_secret):
         return
     raise HTTPException(status_code=401, detail="未授权访问")
+
+
+def is_authenticated(session_cookie: str | None) -> bool:
+    settings = get_settings()
+    return verify_session_token(session_cookie, settings.username, settings.password_hash, settings.session_secret)

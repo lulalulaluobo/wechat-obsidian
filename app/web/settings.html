@@ -29,7 +29,7 @@
         radial-gradient(circle at bottom left, rgba(40,89,67,.1), transparent 26%),
         var(--bg);
     }
-    main { max-width: 980px; margin: 0 auto; padding: 40px 20px 56px; }
+    main { max-width: 1040px; margin: 0 auto; padding: 40px 20px 56px; }
     .toolbar {
       display: flex;
       justify-content: space-between;
@@ -47,7 +47,8 @@
       cursor: pointer;
       font: inherit;
     }
-    .toolbar button { background: var(--accent-2); }
+    .toolbar button, .action-row button.secondary { background: var(--accent-2); }
+    .action-row button.warn { background: var(--warn); }
     h1 { margin: 0 0 8px; font-size: 34px; }
     p.lead { margin: 0 0 24px; color: var(--muted); }
     .card {
@@ -57,43 +58,6 @@
       padding: 18px;
       box-shadow: 0 18px 50px rgba(46, 38, 26, .08);
     }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-    label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
-    input, textarea {
-      width: 100%;
-      font: inherit;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      background: #fff;
-    }
-    textarea { min-height: 160px; resize: vertical; }
-    .changed { background: var(--changed); }
-    .input-invalid {
-      border-color: var(--warn);
-      background: var(--danger-soft);
-    }
-    .action-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 14px;
-    }
-    .action-row button.secondary { background: var(--accent-2); }
-    .action-row button.warn { background: var(--warn); }
-    pre {
-      margin: 0;
-      padding: 14px;
-      border-radius: 14px;
-      background: #231f1a;
-      color: #f2eee7;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      min-height: 140px;
-    }
-    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
-    .muted { color: var(--muted); }
     .overview-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -109,8 +73,40 @@
     }
     .metric strong {
       display: block;
-      font-size: 26px;
+      font-size: 24px;
       margin-top: 6px;
+    }
+    .muted { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+    label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
+    input, textarea {
+      width: 100%;
+      font: inherit;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    .field-hint {
+      margin-top: 6px;
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .field-hint.error { color: var(--warn); }
+    .field-hint.success { color: #1e6a48; }
+    .input-invalid {
+      border-color: var(--warn);
+      background: var(--danger-soft);
+    }
+    .changed { background: var(--changed); }
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
     }
     .pill {
       display: inline-flex;
@@ -125,24 +121,17 @@
     .pill.warn { background: #fff4e4; color: #9a5a15; }
     .pill.error { background: var(--danger-soft); color: #9d3d2d; }
     .pill.info { background: var(--info-soft); color: #2e5fa8; }
-    .status-stack {
-      display: grid;
-      gap: 12px;
-    }
-    .status-card {
-      border: 1px solid var(--line);
-      border-radius: 16px;
+    pre {
+      margin: 0;
       padding: 14px;
-      background: #fff;
+      border-radius: 14px;
+      background: #231f1a;
+      color: #f2eee7;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 140px;
     }
-    .field-hint {
-      margin-top: 6px;
-      min-height: 18px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .field-hint.error { color: var(--warn); }
-    .field-hint.success { color: #1e6a48; }
   </style>
 </head>
 <body>
@@ -155,23 +144,23 @@
       <button id="logout-button">退出登录</button>
     </div>
     <h1>后台设置</h1>
-    <p class="lead">在这里维护 Fast Note Sync 和服务访问配置。剪贴板导入只负责填表，不会自动保存到服务端。</p>
+    <p class="lead">在这里维护 Fast Note Sync、当前登录用户配置，以及密码。剪贴板导入只负责填表，不会自动保存到服务端。</p>
 
     <section class="overview-grid">
       <article class="metric">
         <span class="muted">顶部概览</span>
         <strong id="metric-auth">-</strong>
-        <span class="muted">访问保护</span>
+        <span class="muted">认证状态</span>
       </article>
       <article class="metric">
-        <span class="muted">默认输出</span>
-        <strong id="metric-target">-</strong>
-        <span class="muted">local / fns</span>
+        <span class="muted">当前登录用户</span>
+        <strong id="metric-user">-</strong>
+        <span class="muted">单用户模式</span>
       </article>
       <article class="metric">
         <span class="muted">FNS Vault</span>
         <strong id="metric-vault">-</strong>
-        <span class="muted">当前同步目标</span>
+        <span class="muted">同步目标</span>
       </article>
       <article class="metric">
         <span class="muted">运行时配置</span>
@@ -192,17 +181,13 @@
 
     <div class="status-grid">
       <section class="card">
-        <h2>当前状态</h2>
-        <div class="status-stack">
-          <div class="status-card">
-            <div class="pill info" id="fns-health-pill">待检测</div>
-            <p class="muted" id="fns-health-message">尚未检测 FNS 连接。</p>
-            <div class="action-row" style="margin-top: 10px;">
-              <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
-            </div>
-          </div>
-          <pre id="fns-status-result">等待检测</pre>
+        <h2>FNS 连接状态</h2>
+        <div class="pill info" id="fns-health-pill">待检测</div>
+        <p class="muted" id="fns-health-message">尚未检测 FNS 连接。</p>
+        <div class="action-row" style="margin-top: 10px;">
+          <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
         </div>
+        <pre id="fns-status-result">等待检测</pre>
       </section>
       <section class="card">
         <h2>操作结果</h2>
@@ -235,16 +220,32 @@
           <div class="field-hint" id="hint-fns-token"></div>
         </div>
         <div>
-          <label for="access-token">服务访问口令</label>
-          <input id="access-token" type="password" placeholder="留空则保持不变" />
-          <div class="muted" id="access-token-meta"></div>
-          <div class="field-hint" id="hint-access-token"></div>
+          <label for="cleanup-temp-on-success">转换成功后清理临时目录</label>
+          <input id="cleanup-temp-on-success" type="checkbox" style="width:auto; padding:0; transform: translateY(4px);" />
+          <div class="field-hint success" id="hint-cleanup-temp-on-success">失败任务仍会默认清理临时目录。</div>
         </div>
       </div>
       <div class="action-row">
         <button id="clear-fns-token" class="warn">清空 FNS Token</button>
-        <button id="clear-access-token" class="warn">清空访问口令</button>
         <button id="save-settings" class="secondary">保存并生效</button>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <h2>账号安全</h2>
+      <p class="muted">当前登录用户：<strong id="current-user-label">-</strong></p>
+      <div class="grid">
+        <div>
+          <label for="current-password">修改密码：当前密码</label>
+          <input id="current-password" type="password" autocomplete="current-password" />
+        </div>
+        <div>
+          <label for="new-password">修改密码：新密码</label>
+          <input id="new-password" type="password" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="action-row">
+        <button id="change-password-button" class="secondary">修改密码</button>
       </div>
     </section>
   </main>
@@ -263,10 +264,7 @@
       "fns-target-dir": (value) => value ? { ok: true, text: "将同步到该目录。" } : { ok: false, text: "请输入目标目录。" },
       "fns-token": (value) => value || document.getElementById("fns-token-meta").textContent.includes("已配置")
         ? { ok: true, text: "FNS Token 可用。" }
-        : { ok: false, text: "未配置 FNS Token 时无法写入 FNS。" },
-      "access-token": (value) => value || document.getElementById("access-token-meta").textContent.includes("已配置")
-        ? { ok: true, text: "访问口令可用。" }
-        : { ok: false, text: "建议配置访问口令，避免后台裸露。" }
+        : { ok: false, text: "未配置 FNS Token 时无法写入 FNS。" }
     };
 
     function markChanged(id) {
@@ -294,9 +292,10 @@
 
     function updateOverview(data) {
       document.getElementById("metric-auth").textContent = data.auth_enabled ? "已开启" : "未开启";
-      document.getElementById("metric-target").textContent = data.default_output_target || "-";
+      document.getElementById("metric-user").textContent = data.current_user?.username || "-";
       document.getElementById("metric-vault").textContent = data.fns_vault || "未配置";
       document.getElementById("metric-runtime").textContent = String((data.runtime_overrides || []).length);
+      document.getElementById("current-user-label").textContent = data.current_user?.username || "-";
     }
 
     function setHint(id, state, text) {
@@ -315,7 +314,7 @@
     }
 
     function validateForm() {
-      const ids = ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token", "access-token"];
+      const ids = ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token"];
       const allValid = ids.every((id) => validateField(id));
       document.getElementById("save-settings").disabled = !allValid;
       return allValid;
@@ -347,11 +346,10 @@
       document.getElementById("fns-base-url").value = parsed.fns_base_url;
       document.getElementById("fns-vault").value = parsed.fns_vault;
       document.getElementById("fns-token").value = parsed.fns_token;
-      markChanged("fns-base-url");
-      markChanged("fns-vault");
-      markChanged("fns-token");
+      ["fns-base-url", "fns-vault", "fns-token"].forEach(markChanged);
       clearFields.delete("fns_token");
       document.getElementById("fns-token-meta").textContent = "本次已导入新的 FNS Token，保存后才会写入服务端。";
+      validateForm();
       setResult("已识别 FNS 配置并填充表单。", {
         fns_base_url: parsed.fns_base_url,
         fns_vault: parsed.fns_vault,
@@ -369,9 +367,8 @@
       document.getElementById("fns-vault").value = data.fns_vault || "";
       document.getElementById("fns-target-dir").value = data.fns_target_dir || "";
       document.getElementById("fns-token").value = "";
-      document.getElementById("access-token").value = "";
+      document.getElementById("cleanup-temp-on-success").checked = Boolean(data.cleanup_temp_on_success);
       document.getElementById("fns-token-meta").textContent = data.fns_token_configured ? `已配置：${data.fns_token_masked}` : "当前未配置";
-      document.getElementById("access-token-meta").textContent = data.access_token_configured ? `已配置：${data.access_token_masked}` : "当前未配置";
       updateOverview(data);
       clearFields.clear();
       resetChanged();
@@ -427,17 +424,8 @@
       document.getElementById("fns-token").value = "";
       document.getElementById("fns-token-meta").textContent = "本次保存会清空 FNS Token。";
       markChanged("fns-token");
+      validateForm();
       setResult("已标记：保存时会清空 FNS Token。");
-      validateForm();
-    });
-
-    document.getElementById("clear-access-token").addEventListener("click", () => {
-      clearFields.add("access_token");
-      document.getElementById("access-token").value = "";
-      document.getElementById("access-token-meta").textContent = "本次保存会清空访问口令。";
-      markChanged("access-token");
-      setResult("已标记：保存时会清空服务访问口令。");
-      validateForm();
     });
 
     document.getElementById("save-settings").addEventListener("click", async () => {
@@ -445,15 +433,12 @@
         fns_base_url: document.getElementById("fns-base-url").value.trim(),
         fns_vault: document.getElementById("fns-vault").value.trim(),
         fns_target_dir: document.getElementById("fns-target-dir").value.trim(),
+        cleanup_temp_on_success: document.getElementById("cleanup-temp-on-success").checked,
         clear_fields: Array.from(clearFields)
       };
       const fnsToken = document.getElementById("fns-token").value.trim();
-      const accessToken = document.getElementById("access-token").value.trim();
       if (fnsToken) {
         payload.fns_token = fnsToken;
-      }
-      if (accessToken) {
-        payload.access_token = accessToken;
       }
       const response = await fetch("/api/admin/settings", {
         method: "PUT",
@@ -462,21 +447,33 @@
       });
       const data = await response.json();
       setResult(response.ok ? "设置已保存并生效。" : "保存失败。", data);
-      if (!response.ok) {
-        return;
+      if (response.ok) {
+        await loadSettings();
       }
-      if (data.session_invalidated) {
-        window.location.href = "/";
-        return;
+    });
+
+    document.getElementById("change-password-button").addEventListener("click", async () => {
+      const response = await fetch("/api/admin/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: document.getElementById("current-password").value,
+          new_password: document.getElementById("new-password").value
+        })
+      });
+      const data = await response.json();
+      setResult(response.ok ? "密码已更新。" : "密码更新失败。", data);
+      if (response.ok) {
+        document.getElementById("current-password").value = "";
+        document.getElementById("new-password").value = "";
       }
-      await loadSettings();
     });
 
     document.getElementById("check-fns-button").addEventListener("click", () => {
       checkFnsStatus().catch((error) => setFnsHealth("error", String(error)));
     });
 
-    ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token", "access-token"].forEach((id) => {
+    ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token"].forEach((id) => {
       document.getElementById(id).addEventListener("input", () => {
         clearFields.delete(id.replace(/-/g, "_"));
         validateForm();

@@ -17,16 +17,19 @@ from app.services import build_output_target, sync_markdown_to_fns  # noqa: E402
 
 class FastNoteSyncTests(unittest.TestCase):
     def test_build_output_target_defaults_to_fns_when_configured(self):
-        with patch.dict(
-            os.environ,
-            {
-                "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
-                "WECHAT_MD_FNS_TOKEN": "fns-token",
-                "WECHAT_MD_FNS_VAULT": "MainVault",
-            },
-            clear=False,
-        ):
-            settings = get_settings()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            with patch.dict(
+                os.environ,
+                {
+                    "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                    "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
+                    "WECHAT_MD_FNS_TOKEN": "fns-token",
+                    "WECHAT_MD_FNS_VAULT": "MainVault",
+                },
+                clear=False,
+            ):
+                settings = get_settings()
 
         self.assertEqual(build_output_target(None, settings), "fns")
 
@@ -57,9 +60,11 @@ class FastNoteSyncTests(unittest.TestCase):
             markdown_path = Path(temp_dir) / "示例.md"
             markdown_path.write_text("# 示例\n\n正文", encoding="utf-8")
             session = FakeSession()
+            runtime_path = Path(temp_dir) / "runtime-config.json"
             with patch.dict(
                 os.environ,
                 {
+                    "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
                     "WECHAT_MD_FNS_BASE_URL": "https://fns.example.com",
                     "WECHAT_MD_FNS_TOKEN": "fns-token",
                     "WECHAT_MD_FNS_VAULT": "MainVault",

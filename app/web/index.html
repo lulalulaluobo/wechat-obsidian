@@ -13,6 +13,10 @@
       --line: #ded4c2;
       --accent: #c35f2d;
       --accent-2: #285943;
+      --warn: #9d3d2d;
+      --success-soft: #edf8f2;
+      --info-soft: #eff5ff;
+      --warn-soft: #fff4e4;
     }
     * { box-sizing: border-box; }
     body {
@@ -24,12 +28,33 @@
         radial-gradient(circle at bottom left, rgba(40,89,67,.1), transparent 26%),
         var(--bg);
     }
-    main { max-width: 1100px; margin: 0 auto; padding: 40px 20px 56px; }
+    main { max-width: 1180px; margin: 0 auto; padding: 40px 20px 56px; }
     h1 { margin: 0 0 8px; font-size: 34px; }
     p.lead { margin: 0 0 24px; color: var(--muted); }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .nav { display: flex; gap: 10px; }
+    .nav a, .toolbar button, .actions button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #fff;
+      background: var(--accent);
+      border: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+    .toolbar button, .actions button.secondary { background: var(--accent-2); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
     .card {
-      background: rgba(255,253,248,.88);
+      background: rgba(255,253,248,.9);
       border: 1px solid var(--line);
       border-radius: 18px;
       padding: 18px;
@@ -37,28 +62,49 @@
       backdrop-filter: blur(10px);
     }
     .card h2 { margin: 0 0 14px; font-size: 20px; }
+    .hero-card {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .metric {
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(248,241,229,.88));
+    }
+    .metric strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 22px;
+      word-break: break-word;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.success { background: var(--success-soft); color: #1e6a48; }
+    .pill.warn { background: var(--warn-soft); color: #9a5a15; }
+    .pill.error { background: #fff0ec; color: var(--warn); }
+    .pill.info { background: var(--info-soft); color: #2e5fa8; }
     label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
-    input, textarea, button {
+    input, textarea {
       width: 100%;
       font: inherit;
       border-radius: 12px;
-    }
-    input, textarea {
       padding: 12px 14px;
       border: 1px solid var(--line);
       background: #fff;
     }
     textarea { min-height: 180px; resize: vertical; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .actions { display: flex; gap: 10px; margin-top: 16px; }
-    .actions button {
-      border: 0;
-      padding: 12px 14px;
-      cursor: pointer;
-      color: #fff;
-      background: var(--accent);
-    }
-    .actions button.secondary { background: var(--accent-2); }
+    .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
     pre, .result {
       margin: 0;
       padding: 14px;
@@ -70,42 +116,16 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-    }
-    .nav {
-      display: flex;
-      gap: 10px;
-    }
-    .nav a {
-      display: inline-flex;
-      align-items: center;
-      text-decoration: none;
-      border-radius: 999px;
-      padding: 10px 14px;
-      color: #fff;
-      background: var(--accent);
-    }
-    .toolbar button {
-      width: auto;
-      border: 0;
-      border-radius: 999px;
-      padding: 10px 14px;
-      background: var(--accent-2);
-      color: #fff;
-      cursor: pointer;
-    }
-    ul.jobs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-    ul.jobs li {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px;
-      background: #fff;
-    }
+    .muted { color: var(--muted); }
     small { color: var(--muted); }
+    .banner {
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,253,248,.82);
+      box-shadow: 0 14px 30px rgba(46, 38, 26, .06);
+    }
   </style>
 </head>
 <body>
@@ -117,17 +137,47 @@
       </div>
       <button id="logout-button">退出登录</button>
     </div>
+
     <h1>Wechat MD Server</h1>
-    <p class="lead">将微信公众号文章转成 Markdown，并按配置写入本地目录或 Fast Note Sync。</p>
+    <p class="lead">将微信公众号文章转换为 Markdown，并同步到当前 FNS，不再通过页面指定本地保存位置。</p>
+
+    <section class="banner">
+      <div class="pill info" id="fns-health-pill">待检测</div>
+      <p class="muted" id="fns-health-message" style="margin: 10px 0 0;">准备读取当前 FNS 配置。</p>
+    </section>
+
+    <section class="hero-card">
+      <article class="metric">
+        <span class="muted">同步到当前 FNS</span>
+        <strong id="fns-base-url">-</strong>
+        <span class="muted">服务地址</span>
+      </article>
+      <article class="metric">
+        <span class="muted">目标 Vault</span>
+        <strong id="fns-vault">-</strong>
+        <span class="muted">笔记仓库</span>
+      </article>
+      <article class="metric">
+        <span class="muted">目标目录</span>
+        <strong id="fns-target-dir">-</strong>
+        <span class="muted">同步路径</span>
+      </article>
+      <article class="metric">
+        <span class="muted">当前登录用户</span>
+        <strong id="current-user">-</strong>
+        <span class="muted">单用户模式</span>
+      </article>
+    </section>
+
+    <div class="actions" style="margin: 0 0 18px;">
+      <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
+    </div>
+
     <div class="grid">
       <section class="card">
         <h2>单篇转换</h2>
         <label for="single-url">微信文章链接</label>
         <input id="single-url" placeholder="https://mp.weixin.qq.com/s/..." />
-        <label for="single-output">输出目录</label>
-        <input id="single-output" placeholder="D:\obsidian\00_Inbox" />
-        <label for="single-target">输出目标</label>
-        <input id="single-target" placeholder="fns / local" />
         <div class="row">
           <div>
             <label for="single-timeout">超时秒数</label>
@@ -149,10 +199,6 @@
         <textarea id="batch-urls" placeholder="每行一个微信文章链接"></textarea>
         <label for="batch-file">或导入文件（txt / md / csv）</label>
         <input id="batch-file" type="file" />
-        <label for="batch-output">输出目录</label>
-        <input id="batch-output" placeholder="D:\obsidian\00_Inbox" />
-        <label for="batch-target">输出目标</label>
-        <input id="batch-target" placeholder="fns / local" />
         <div class="row">
           <div>
             <label for="batch-timeout">超时秒数</label>
@@ -190,22 +236,56 @@
     const singleResult = document.getElementById("single-result");
     const batchResult = document.getElementById("batch-result");
 
+    function setFnsHealth(state, message) {
+      const pill = document.getElementById("fns-health-pill");
+      pill.className = `pill ${state}`;
+      pill.textContent = state === "success" ? "连接正常" : state === "warn" ? "部分可用" : state === "error" ? "连接异常" : "待检测";
+      document.getElementById("fns-health-message").textContent = message;
+    }
+
+    function updateHero(data) {
+      document.getElementById("fns-base-url").textContent = data.fns_base_url || "未配置";
+      document.getElementById("fns-vault").textContent = data.fns_vault || "未配置";
+      document.getElementById("fns-target-dir").textContent = data.fns_target_dir || "未配置";
+      document.getElementById("current-user").textContent = data.current_user?.username || "-";
+    }
+
     async function loadConfig() {
       const response = await fetch("/api/config");
       const data = await response.json();
       configResult.textContent = JSON.stringify(data, null, 2);
-      document.getElementById("single-output").value = data.default_output_dir || "";
-      document.getElementById("batch-output").value = data.default_output_dir || "";
-      document.getElementById("single-target").value = data.default_output_target || "";
-      document.getElementById("batch-target").value = data.default_output_target || "";
+      updateHero(data);
+      if (data.fns_enabled) {
+        setFnsHealth("info", "FNS 配置已读取，可以直接检测连通性。");
+      } else {
+        setFnsHealth("warn", "FNS 尚未配置完整，请先去设置页。");
+      }
+    }
+
+    async function checkFnsStatus() {
+      setFnsHealth("info", "正在检测 FNS 连接...");
+      const response = await fetch("/api/admin/fns-status");
+      const data = await response.json();
+      configResult.textContent = JSON.stringify(data, null, 2);
+      if (!response.ok) {
+        setFnsHealth("error", data.detail || "检测失败");
+        return;
+      }
+      if (!data.configured) {
+        setFnsHealth("warn", data.message || "FNS 尚未配置完整。");
+      } else if (data.connected && data.vault_exists) {
+        setFnsHealth("success", `已连接 ${data.base_url}，vault ${data.vault_name} 可用。`);
+      } else if (data.connected) {
+        setFnsHealth("warn", data.message || "连接正常，但目标 vault 不存在。");
+      } else {
+        setFnsHealth("error", data.message || "连接失败。");
+      }
     }
 
     document.getElementById("single-submit").addEventListener("click", async () => {
       singleResult.textContent = "处理中...";
       const payload = {
         url: document.getElementById("single-url").value.trim(),
-        output_dir: document.getElementById("single-output").value.trim(),
-        output_target: document.getElementById("single-target").value.trim(),
         timeout: Number(document.getElementById("single-timeout").value || 30),
         save_html: document.getElementById("single-save-html").checked
       };
@@ -236,8 +316,6 @@
       const fileInput = document.getElementById("batch-file");
       const formData = new FormData();
       formData.append("urls_text", document.getElementById("batch-urls").value);
-      formData.append("output_dir", document.getElementById("batch-output").value.trim());
-      formData.append("output_target", document.getElementById("batch-target").value.trim());
       formData.append("timeout", document.getElementById("batch-timeout").value || "30");
       formData.append("save_html", document.getElementById("batch-save-html").checked ? "true" : "false");
       if (fileInput.files[0]) {
@@ -254,13 +332,18 @@
       }
     });
 
+    document.getElementById("check-fns-button").addEventListener("click", () => {
+      checkFnsStatus().catch((error) => setFnsHealth("error", String(error)));
+    });
+
     loadConfig().catch((error) => {
       configResult.textContent = String(error);
+      setFnsHealth("error", String(error));
     });
 
     document.getElementById("logout-button").addEventListener("click", async () => {
       await fetch("/api/session", { method: "DELETE" });
-      window.location.href = "/";
+      window.location.href = "/login";
     });
   </script>
 </body>

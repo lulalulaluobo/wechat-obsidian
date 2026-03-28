@@ -152,11 +152,13 @@ def build_config_payload() -> dict[str, Any]:
         "r2_config_exists": r2_config_exists,
         "service_mode": "hybrid" if settings.fns_enabled else "local_only",
         "default_output_target": default_output_target,
-        "auth_enabled": bool(settings.access_token),
+        "auth_enabled": True,
         "fns_enabled": settings.fns_enabled,
         "fns_base_url": settings.fns_base_url,
         "fns_vault": settings.fns_vault,
         "fns_target_dir": settings.fns_target_dir,
+        "current_user": {"username": settings.username},
+        "cleanup_temp_on_success": settings.cleanup_temp_on_success,
     }
 
 
