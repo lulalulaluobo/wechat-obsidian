@@ -38,7 +38,7 @@ class FastNoteSyncTests(unittest.TestCase):
                 return None
 
             def json(self):
-                return {"code": 0, "msg": "ok", "data": {"path": "00_Inbox/微信公众号/示例.md"}}
+                return {"code": 1, "status": True, "message": "Success", "data": {"path": "00_Inbox/微信公众号/示例.md"}}
 
         class FakeSession:
             def __init__(self):

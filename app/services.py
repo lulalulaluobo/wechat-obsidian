@@ -229,8 +229,13 @@ def sync_markdown_to_fns(
     except ValueError as error:
         raise RuntimeError("Fast Note Sync 返回了无法解析的 JSON") from error
 
-    if isinstance(data, dict) and data.get("code") not in (None, 0):
-        raise RuntimeError(f"Fast Note Sync 写入失败: {data.get('msg') or data.get('message') or data.get('code')}")
+    if isinstance(data, dict):
+        success_flag = data.get("status")
+        code = data.get("code")
+        if success_flag is False or code not in (None, 0, 1):
+            raise RuntimeError(
+                f"Fast Note Sync 写入失败: {data.get('msg') or data.get('message') or data.get('code')}"
+            )
 
     return {
         "status": "success",
