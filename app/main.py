@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import Cookie, FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import is_authenticated, router
 from app.auth import SESSION_COOKIE_NAME
@@ -11,6 +12,8 @@ from app.auth import SESSION_COOKIE_NAME
 
 app = FastAPI(title="wechat-md-server", version="0.1.0")
 app.include_router(router)
+WEB_DIR = Path(__file__).resolve().parent / "web"
+app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")
 
 
 @app.middleware("http")
@@ -40,14 +43,12 @@ async def settings_page(
 async def login_page(
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ):
-    web_dir = Path(__file__).resolve().parent / "web"
     if is_authenticated(session_cookie):
         return RedirectResponse(url="/", status_code=303)
-    return FileResponse(web_dir / "login.html")
+    return FileResponse(WEB_DIR / "login.html")
 
 
 def _resolve_page(page_name: str, session_cookie: str | None):
-    web_dir = Path(__file__).resolve().parent / "web"
     if not is_authenticated(session_cookie):
         return RedirectResponse(url="/login", status_code=303)
-    return FileResponse(web_dir / page_name)
+    return FileResponse(WEB_DIR / page_name)

@@ -57,9 +57,11 @@ class ApiTests(unittest.TestCase):
         response = self.client.get("/login")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("登录 Wechat MD Server", response.text)
+        self.assertIn("管理后台登录", response.text)
+        self.assertIn("同步服务管理台", response.text)
         self.assertIn("用户名", response.text)
         self.assertIn("密码", response.text)
+        self.assertIn("跟随系统", response.text)
 
     def test_default_admin_login_success(self):
         login_response = self._login()
@@ -73,7 +75,12 @@ class ApiTests(unittest.TestCase):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("同步到当前 FNS", response.text)
+        self.assertIn("工作台概览", response.text)
+        self.assertIn("转换中心", response.text)
+        self.assertIn("系统状态", response.text)
+        self.assertIn("任务摘要", response.text)
+        self.assertIn("最近结果", response.text)
+        self.assertIn("原始 JSON", response.text)
         self.assertNotIn("输出目录", response.text)
         self.assertNotIn("输出目标", response.text)
         self.assertNotIn("写入本地目录", response.text)
@@ -308,10 +315,14 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         text = response.text
+        self.assertIn("配置总览", text)
+        self.assertIn("连接诊断", text)
+        self.assertIn("FNS 配置", text)
+        self.assertIn("运行行为", text)
         self.assertIn("从剪贴板导入 FNS", text)
         self.assertIn("解析并填充", text)
         self.assertIn('id="fns-json-input"', text)
-        self.assertIn("顶部概览", text)
+        self.assertIn("设置中心", text)
         self.assertIn("检测 FNS 连接", text)
         self.assertIn('id="fns-status-result"', text)
         self.assertIn("当前登录用户", text)

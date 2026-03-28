@@ -4,285 +4,321 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wechat MD Server Settings</title>
-  <style>
-    :root {
-      --bg: #f4efe6;
-      --card: #fffdf8;
-      --ink: #1f2430;
-      --muted: #6a7280;
-      --line: #ded4c2;
-      --accent: #c35f2d;
-      --accent-2: #285943;
-      --warn: #9d3d2d;
-      --changed: #fff1ce;
-      --danger-soft: #fff0ec;
-      --success-soft: #edf8f2;
-      --info-soft: #eff5ff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at top right, rgba(195,95,45,.14), transparent 28%),
-        radial-gradient(circle at bottom left, rgba(40,89,67,.1), transparent 26%),
-        var(--bg);
-    }
-    main { max-width: 1080px; margin: 0 auto; padding: 40px 20px 56px; }
-    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .nav { display: flex; gap: 10px; }
-    .nav a, .toolbar button, .action-row button {
-      text-decoration: none;
-      border: 0;
-      border-radius: 999px;
-      padding: 10px 14px;
-      color: #fff;
-      background: var(--accent);
-      cursor: pointer;
-      font: inherit;
-    }
-    .toolbar button, .action-row button.secondary { background: var(--accent-2); }
-    .action-row button.warn { background: var(--warn); }
-    h1 { margin: 0 0 8px; font-size: 34px; }
-    p.lead { margin: 0 0 24px; color: var(--muted); }
-    .card {
-      background: rgba(255,253,248,.92);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 18px 50px rgba(46, 38, 26, .08);
-      margin-top: 16px;
-    }
-    .overview-grid, .grid, .status-grid {
-      display: grid;
-      gap: 16px;
-    }
-    .overview-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 20px 0 16px; }
-    .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    .status-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .metric {
-      border-radius: 18px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(248,241,229,.88));
-      box-shadow: 0 16px 38px rgba(54, 45, 32, .08);
-    }
-    .metric strong { display: block; font-size: 24px; margin-top: 6px; word-break: break-word; }
-    .muted { color: var(--muted); }
-    label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
-    input, textarea, select {
-      width: 100%;
-      font: inherit;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      background: #fff;
-    }
-    textarea { min-height: 160px; resize: vertical; }
-    .field-hint { margin-top: 6px; min-height: 18px; font-size: 12px; color: var(--muted); }
-    .field-hint.error { color: var(--warn); }
-    .field-hint.success { color: #1e6a48; }
-    .input-invalid { border-color: var(--warn); background: var(--danger-soft); }
-    .changed { background: var(--changed); }
-    .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-    .pill {
-      display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 10px;
-      font-size: 12px; font-weight: 600;
-    }
-    .pill.success { background: var(--success-soft); color: #1e6a48; }
-    .pill.warn { background: #fff4e4; color: #9a5a15; }
-    .pill.error { background: var(--danger-soft); color: #9d3d2d; }
-    .pill.info { background: var(--info-soft); color: #2e5fa8; }
-    pre {
-      margin: 0; padding: 14px; border-radius: 14px; background: #231f1a; color: #f2eee7;
-      overflow: auto; white-space: pre-wrap; word-break: break-word; min-height: 140px;
-    }
-    .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
-    .mode-card {
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
-      background: #fff;
-    }
-    .mode-card input { width: auto; margin-right: 8px; }
-    .hidden { display: none; }
-  </style>
+  <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
-  <main>
-    <div class="toolbar">
-      <div class="nav">
-        <a href="/">转换</a>
-        <a href="/settings">设置</a>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div>
+        <span class="brand-mark">Wechat MD Server</span>
+        <h1 class="brand-title">设置中心</h1>
+        <p class="brand-copy">这里维护同步目标、图片外链、运行行为和管理员安全设置。保存后立即生效，敏感字段不会在页面明文回显。</p>
       </div>
-      <button id="logout-button">退出登录</button>
+
+      <nav class="sidebar-nav" aria-label="主导航">
+        <a class="nav-link" href="/">
+          <span>转换</span>
+          <span class="status-badge info">Work</span>
+        </a>
+        <a class="nav-link active" href="/settings">
+          <span>设置</span>
+          <span class="status-badge warn">Admin</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-note">
+          <strong>配置边界</strong>
+          <p class="helper-text">设置页只负责全局配置，不承载单次任务的临时覆盖。转换页会直接消费这里保存的运行时配置。</p>
+        </div>
+        <button id="logout-button" class="button ghost">退出登录</button>
+      </div>
+    </aside>
+
+    <div class="content-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Settings Center</p>
+          <h1 class="page-title">设置中心</h1>
+          <p class="page-copy">参考同步服务后台的组织方式，把核心配置和状态诊断拆开。左侧负责维护配置，右侧负责查看配置总览、连接诊断和保存结果。</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="quick-chip">
+            <span>当前登录用户</span>
+            <strong id="metric-user">-</strong>
+          </div>
+          <label class="theme-switcher" for="theme-select-settings">
+            <span>主题</span>
+            <select id="theme-select-settings" data-theme-select>
+              <option value="system">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main class="page-main">
+        <section class="section-block">
+          <div class="section-head">
+            <div>
+              <h2>配置总览</h2>
+              <p>先确认当前账号、FNS 目标和图片模式，再继续修改细项。</p>
+            </div>
+          </div>
+
+          <div class="overview-strip">
+            <article class="metric-card compact">
+              <div class="metric-label">认证状态</div>
+              <div class="metric-value" id="metric-auth">-</div>
+              <div class="metric-foot">当前服务访问保护</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">FNS Vault</div>
+              <div class="metric-value" id="metric-vault">-</div>
+              <div class="metric-foot">当前同步目标</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">图片模式</div>
+              <div class="metric-value" id="metric-image-mode">-</div>
+              <div class="metric-foot">微信原链或 S3 外链</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">运行时覆盖</div>
+              <div class="metric-value" id="metric-overrides">-</div>
+              <div class="metric-foot">配置文件中的有效字段数</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="settings-grid">
+            <div class="primary-stack">
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>FNS 配置</h2>
+                      <p>填写 Fast Note Sync 的基础地址、Vault、目录和 Token。导入只会填表，不会自动保存。</p>
+                    </div>
+                    <button id="check-fns-button" class="button ghost">检测 FNS 连接</button>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="field-grid one">
+                    <div class="field">
+                      <label for="fns-json-input">粘贴 FNS JSON</label>
+                      <textarea id="fns-json-input" placeholder='{"api":"https://...","apiToken":"...","vault":"obsidian"}'></textarea>
+                    </div>
+                  </div>
+
+                  <div class="action-row">
+                    <button id="paste-fns-button" class="button secondary">从剪贴板导入 FNS</button>
+                    <button id="parse-fns-button" class="button ghost">解析并填充</button>
+                    <button id="clear-fns-token" class="button danger">清空 FNS Token</button>
+                  </div>
+
+                  <div class="field-grid">
+                    <div class="field">
+                      <label for="fns-base-url">FNS 基础地址</label>
+                      <input id="fns-base-url" placeholder="https://obsync.example.com">
+                      <div class="field-hint" id="hint-fns-base-url"></div>
+                    </div>
+                    <div class="field">
+                      <label for="fns-vault">Vault</label>
+                      <input id="fns-vault" placeholder="obsidian">
+                      <div class="field-hint" id="hint-fns-vault"></div>
+                    </div>
+                    <div class="field">
+                      <label for="fns-target-dir">目标目录</label>
+                      <input id="fns-target-dir" placeholder="00_Inbox/微信公众号">
+                      <div class="field-hint" id="hint-fns-target-dir"></div>
+                    </div>
+                    <div class="field">
+                      <label for="fns-token">FNS Token</label>
+                      <input id="fns-token" type="password" placeholder="留空则保持不变">
+                      <div class="helper-text" id="fns-token-meta"></div>
+                      <div class="field-hint" id="hint-fns-token"></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>图片外链设置</h2>
+                      <p>没有图床时推荐微信原链。只有你已经部署图床时，才需要启用 S3 图床外链。</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="radio-stack">
+                    <label class="choice-card">
+                      <div class="checkbox-row">
+                        <input type="radio" name="image-mode" id="image-mode-wechat" value="wechat_hotlink">
+                        <strong>微信原链</strong>
+                      </div>
+                      <p class="helper-text">不上传图片，Markdown 直接保留微信图片外链。</p>
+                    </label>
+                    <label class="choice-card">
+                      <div class="checkbox-row">
+                        <input type="radio" name="image-mode" id="image-mode-s3" value="s3_hotlink">
+                        <strong>S3 图床外链</strong>
+                      </div>
+                      <p class="helper-text">静态图压缩后上传到通用 S3 图床，GIF / SVG 保留微信原链。</p>
+                    </label>
+                  </div>
+
+                  <div id="s3-settings-panel" style="margin-top:16px;">
+                    <div class="field-grid">
+                      <div class="field">
+                        <label for="image-storage-endpoint">S3 Endpoint</label>
+                        <input id="image-storage-endpoint" placeholder="https://s3.example.com">
+                        <div class="field-hint" id="hint-image-storage-endpoint"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-region">Region</label>
+                        <input id="image-storage-region" placeholder="auto">
+                        <div class="field-hint" id="hint-image-storage-region"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-bucket">Bucket</label>
+                        <input id="image-storage-bucket" placeholder="wechat-images">
+                        <div class="field-hint" id="hint-image-storage-bucket"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-access-key-id">Access Key ID</label>
+                        <input id="image-storage-access-key-id" placeholder="AKIA...">
+                        <div class="field-hint" id="hint-image-storage-access-key-id"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-secret-access-key">Secret Access Key</label>
+                        <input id="image-storage-secret-access-key" type="password" placeholder="留空则保持不变">
+                        <div class="helper-text" id="image-storage-secret-meta"></div>
+                        <div class="field-hint" id="hint-image-storage-secret-access-key"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-path-template">路径模板</label>
+                        <input id="image-storage-path-template" placeholder="wechat/{year}/{filename}">
+                        <div class="field-hint" id="hint-image-storage-path-template"></div>
+                      </div>
+                      <div class="field">
+                        <label for="image-storage-public-base-url">公开访问域名</label>
+                        <input id="image-storage-public-base-url" placeholder="https://img.example.com">
+                        <div class="field-hint" id="hint-image-storage-public-base-url"></div>
+                      </div>
+                    </div>
+
+                    <div class="action-row">
+                      <button id="clear-image-storage-secret" class="button danger">清空图床密钥</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>运行行为</h2>
+                      <p>控制转换成功后的临时目录处理方式。失败任务仍会默认清理。</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="field-grid one">
+                    <div class="field inline-toggle">
+                      <label for="cleanup-temp-on-success">转换成功后清理临时目录</label>
+                      <div class="checkbox-row">
+                        <input id="cleanup-temp-on-success" type="checkbox">
+                        <span class="helper-text">关闭后会在服务端工作目录保留成功任务产物。</span>
+                      </div>
+                      <div class="field-hint success" id="hint-cleanup-temp-on-success">失败任务仍会默认清理临时目录。</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>账号安全</h2>
+                      <p>当前登录用户：<strong id="current-user-label">-</strong></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="field-grid">
+                    <div class="field">
+                      <label for="current-password">当前密码</label>
+                      <input id="current-password" type="password" autocomplete="current-password">
+                    </div>
+                    <div class="field">
+                      <label for="new-password">新密码</label>
+                      <input id="new-password" type="password" autocomplete="new-password">
+                    </div>
+                  </div>
+
+                  <div class="action-row">
+                    <button id="change-password-button" class="button secondary">修改密码</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="side-stack">
+              <section class="admin-card">
+                <div class="panel-header">
+                  <div>
+                    <h3>连接诊断</h3>
+                    <p>查看 FNS 当前连通性、Token 有效性和目标 vault 是否存在。</p>
+                  </div>
+                </div>
+                <div class="status-list">
+                  <div class="status-row">
+                    <div>
+                      <strong id="metric-fns-health">待检测</strong>
+                      <div class="helper-text" id="metric-fns-health-detail">尚未执行连接检测</div>
+                    </div>
+                    <span class="status-badge info">FNS</span>
+                  </div>
+                </div>
+                <div id="fns-health-summary" class="status-panel"></div>
+                <div class="raw-json">
+                  <details>
+                    <summary>原始 JSON</summary>
+                    <pre id="fns-status-result">等待检测</pre>
+                  </details>
+                </div>
+              </section>
+
+              <section class="admin-card">
+                <div class="panel-header">
+                  <div>
+                    <h3>操作结果</h3>
+                    <p>保存、导入和密码更新都会先显示结构化反馈。</p>
+                  </div>
+                  <button id="save-settings" class="button">保存并生效</button>
+                </div>
+                <div id="settings-feedback" class="status-panel"></div>
+                <div class="raw-json">
+                  <details open>
+                    <summary>原始 JSON</summary>
+                    <pre id="settings-result">等待操作</pre>
+                  </details>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
     </div>
-    <h1>后台设置</h1>
-    <p class="lead">在这里维护 Fast Note Sync、图片外链策略和账号安全。剪贴板导入只负责填表，不会自动保存到服务端。</p>
+  </div>
 
-    <section class="overview-grid">
-      <article class="metric">
-        <span class="muted">顶部概览</span>
-        <strong id="metric-auth">-</strong>
-        <span class="muted">认证状态</span>
-      </article>
-      <article class="metric">
-        <span class="muted">当前登录用户</span>
-        <strong id="metric-user">-</strong>
-        <span class="muted">单用户模式</span>
-      </article>
-      <article class="metric">
-        <span class="muted">FNS Vault</span>
-        <strong id="metric-vault">-</strong>
-        <span class="muted">同步目标</span>
-      </article>
-      <article class="metric">
-        <span class="muted">图片模式</span>
-        <strong id="metric-image-mode">-</strong>
-        <span class="muted">原链或 S3 外链</span>
-      </article>
-    </section>
-
-    <section class="card">
-      <h2>FNS 导入</h2>
-      <label for="fns-json-input">粘贴 FNS JSON</label>
-      <textarea id="fns-json-input" placeholder='{"api":"https://...","apiToken":"...","vault":"obsidian"}'></textarea>
-      <div class="action-row">
-        <button id="paste-fns-button">从剪贴板导入 FNS</button>
-        <button id="parse-fns-button" class="secondary">解析并填充</button>
-      </div>
-    </section>
-
-    <div class="status-grid">
-      <section class="card">
-        <h2>FNS 连接状态</h2>
-        <div class="pill info" id="fns-health-pill">待检测</div>
-        <p class="muted" id="fns-health-message">尚未检测 FNS 连接。</p>
-        <div class="action-row">
-          <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
-        </div>
-        <pre id="fns-status-result">等待检测</pre>
-      </section>
-      <section class="card">
-        <h2>操作结果</h2>
-        <pre id="settings-result">等待操作</pre>
-      </section>
-    </div>
-
-    <section class="card">
-      <h2>服务配置</h2>
-      <div class="grid">
-        <div>
-          <label for="fns-base-url">FNS 基础地址</label>
-          <input id="fns-base-url" placeholder="https://obsync.example.com" />
-          <div class="field-hint" id="hint-fns-base-url"></div>
-        </div>
-        <div>
-          <label for="fns-vault">Vault</label>
-          <input id="fns-vault" placeholder="obsidian" />
-          <div class="field-hint" id="hint-fns-vault"></div>
-        </div>
-        <div>
-          <label for="fns-target-dir">目标目录</label>
-          <input id="fns-target-dir" placeholder="00_Inbox/微信公众号" />
-          <div class="field-hint" id="hint-fns-target-dir"></div>
-        </div>
-        <div>
-          <label for="fns-token">FNS Token</label>
-          <input id="fns-token" type="password" placeholder="留空则保持不变" />
-          <div class="muted" id="fns-token-meta"></div>
-          <div class="field-hint" id="hint-fns-token"></div>
-        </div>
-        <div>
-          <label for="cleanup-temp-on-success">转换成功后清理临时目录</label>
-          <input id="cleanup-temp-on-success" type="checkbox" style="width:auto; padding:0; transform: translateY(4px);" />
-          <div class="field-hint success" id="hint-cleanup-temp-on-success">失败任务仍会默认清理临时目录。</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>图片外链设置</h2>
-      <div class="mode-grid">
-        <label class="mode-card">
-          <input type="radio" name="image-mode" id="image-mode-wechat" value="wechat_hotlink" />
-          <strong>微信原链</strong>
-          <div class="muted">不上传图片，Markdown 直接保留微信图片外链。</div>
-        </label>
-        <label class="mode-card">
-          <input type="radio" name="image-mode" id="image-mode-s3" value="s3_hotlink" />
-          <strong>S3 图床外链</strong>
-          <div class="muted">静态图压缩后上传到通用 S3 图床，GIF / SVG 保留微信原链。</div>
-        </label>
-      </div>
-
-      <div id="s3-settings-panel" class="hidden">
-        <div class="grid">
-          <div>
-            <label for="image-storage-endpoint">S3 Endpoint</label>
-            <input id="image-storage-endpoint" placeholder="https://s3.example.com" />
-            <div class="field-hint" id="hint-image-storage-endpoint"></div>
-          </div>
-          <div>
-            <label for="image-storage-region">Region</label>
-            <input id="image-storage-region" placeholder="auto" />
-            <div class="field-hint" id="hint-image-storage-region"></div>
-          </div>
-          <div>
-            <label for="image-storage-bucket">Bucket</label>
-            <input id="image-storage-bucket" placeholder="wechat-images" />
-            <div class="field-hint" id="hint-image-storage-bucket"></div>
-          </div>
-          <div>
-            <label for="image-storage-access-key-id">Access Key ID</label>
-            <input id="image-storage-access-key-id" placeholder="AKIA..." />
-            <div class="field-hint" id="hint-image-storage-access-key-id"></div>
-          </div>
-          <div>
-            <label for="image-storage-secret-access-key">Secret Access Key</label>
-            <input id="image-storage-secret-access-key" type="password" placeholder="留空则保持不变" />
-            <div class="muted" id="image-storage-secret-meta"></div>
-            <div class="field-hint" id="hint-image-storage-secret-access-key"></div>
-          </div>
-          <div>
-            <label for="image-storage-path-template">路径模板</label>
-            <input id="image-storage-path-template" placeholder="wechat/{year}/{filename}" />
-            <div class="field-hint" id="hint-image-storage-path-template"></div>
-          </div>
-          <div>
-            <label for="image-storage-public-base-url">公开访问域名</label>
-            <input id="image-storage-public-base-url" placeholder="https://img.example.com" />
-            <div class="field-hint" id="hint-image-storage-public-base-url"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="action-row">
-        <button id="clear-fns-token" class="warn">清空 FNS Token</button>
-        <button id="clear-image-storage-secret" class="warn">清空图床密钥</button>
-        <button id="save-settings" class="secondary">保存并生效</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>账号安全</h2>
-      <p class="muted">当前登录用户：<strong id="current-user-label">-</strong></p>
-      <div class="grid">
-        <div>
-          <label for="current-password">修改密码：当前密码</label>
-          <input id="current-password" type="password" autocomplete="current-password" />
-        </div>
-        <div>
-          <label for="new-password">修改密码：新密码</label>
-          <input id="new-password" type="password" autocomplete="new-password" />
-        </div>
-      </div>
-      <div class="action-row">
-        <button id="change-password-button" class="secondary">修改密码</button>
-      </div>
-    </section>
-  </main>
+  <script src="/assets/admin.js"></script>
   <script>
     const resultEl = document.getElementById("settings-result");
     const fnsStatusEl = document.getElementById("fns-status-result");
@@ -294,11 +330,35 @@
       "image-storage-access-key-id",
       "image-storage-secret-access-key",
       "image-storage-path-template",
-      "image-storage-public-base-url"
+      "image-storage-public-base-url",
     ];
+
+    AdminUI.initThemeControls();
 
     function getImageMode() {
       return document.querySelector('input[name="image-mode"]:checked')?.value || "wechat_hotlink";
+    }
+
+    function setSettingsFeedback(title, tone, description, items = []) {
+      AdminUI.setHtml("settings-feedback", AdminUI.resultPanel({
+        title,
+        tone,
+        statusText: tone === "success" ? "成功" : tone === "error" ? "失败" : tone === "warn" ? "待处理" : "待操作",
+        description,
+        items,
+      }));
+    }
+
+    function setFnsFeedback(title, tone, description, items = []) {
+      AdminUI.setHtml("fns-health-summary", AdminUI.resultPanel({
+        title,
+        tone,
+        statusText: tone === "success" ? "正常" : tone === "error" ? "异常" : tone === "warn" ? "待处理" : "待检测",
+        description,
+        items,
+      }));
+      AdminUI.setText("metric-fns-health", tone === "success" ? "连接正常" : tone === "error" ? "连接异常" : tone === "warn" ? "待处理" : "待检测");
+      AdminUI.setText("metric-fns-health-detail", description);
     }
 
     const validators = {
@@ -308,7 +368,9 @@
       "fns-vault": (value) => !document.getElementById("fns-base-url").value.trim() || value
         ? { ok: true, text: value ? "Vault 已填写。" : "未启用 FNS 时可以留空。" }
         : { ok: false, text: "启用 FNS 时请输入 vault 名称。" },
-      "fns-target-dir": (value) => value ? { ok: true, text: "将同步到该目录。" } : { ok: false, text: "请输入目标目录。" },
+      "fns-target-dir": (value) => value
+        ? { ok: true, text: "将同步到该目录。" }
+        : { ok: false, text: "请输入目标目录。" },
       "fns-token": (value) => !document.getElementById("fns-base-url").value.trim() || value || document.getElementById("fns-token-meta").textContent.includes("已配置")
         ? { ok: true, text: "FNS Token 可用。" }
         : { ok: false, text: "启用 FNS 时需要填写 Token。" },
@@ -332,38 +394,28 @@
         : { ok: false, text: "请输入路径模板。" },
       "image-storage-public-base-url": (value) => getImageMode() !== "s3_hotlink" || /^https?:\/\//i.test(value)
         ? { ok: true, text: getImageMode() === "s3_hotlink" ? "公开访问域名格式正确。" : "当前模式无需填写。" }
-        : { ok: false, text: "公开访问域名必须以 http:// 或 https:// 开头。" }
+        : { ok: false, text: "公开访问域名必须以 http:// 或 https:// 开头。" },
     };
 
     function markChanged(id) {
-      document.getElementById(id)?.classList.add("changed");
+      document.getElementById(id)?.classList.add("field-changed");
     }
 
     function resetChanged() {
-      document.querySelectorAll(".changed").forEach((node) => node.classList.remove("changed"));
+      document.querySelectorAll(".field-changed").forEach((node) => node.classList.remove("field-changed"));
     }
 
     function setResult(message, data) {
-      const lines = [message];
-      if (data) {
-        lines.push(JSON.stringify(data, null, 2));
-      }
-      resultEl.textContent = lines.join("\n\n");
-    }
-
-    function setFnsHealth(state, message) {
-      const pill = document.getElementById("fns-health-pill");
-      pill.className = `pill ${state}`;
-      pill.textContent = state === "success" ? "连接正常" : state === "warn" ? "部分可用" : state === "error" ? "连接异常" : "待检测";
-      document.getElementById("fns-health-message").textContent = message;
+      resultEl.textContent = [message, data ? AdminUI.prettyJson(data) : ""].filter(Boolean).join("\n\n");
     }
 
     function updateOverview(data) {
-      document.getElementById("metric-auth").textContent = data.auth_enabled ? "已开启" : "未开启";
-      document.getElementById("metric-user").textContent = data.current_user?.username || "-";
-      document.getElementById("metric-vault").textContent = data.fns_vault || "未配置";
-      document.getElementById("metric-image-mode").textContent = data.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链";
-      document.getElementById("current-user-label").textContent = data.current_user?.username || "-";
+      AdminUI.setText("metric-auth", data.auth_enabled ? "已开启" : "未开启");
+      AdminUI.setText("metric-user", data.current_user?.username || "-");
+      AdminUI.setText("metric-vault", data.fns_vault || "未配置");
+      AdminUI.setText("metric-image-mode", data.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链");
+      AdminUI.setText("metric-overrides", String((data.runtime_overrides || []).length));
+      AdminUI.setText("current-user-label", data.current_user?.username || "-");
     }
 
     function setHint(id, state, text) {
@@ -372,12 +424,12 @@
       if (!input || !hint) return;
       hint.textContent = text;
       hint.className = `field-hint ${state ? "success" : "error"}`;
-      input.classList.toggle("input-invalid", !state);
+      input.classList.toggle("field-error", !state);
     }
 
     function syncImageModeUI() {
       const useS3 = getImageMode() === "s3_hotlink";
-      document.getElementById("s3-settings-panel").classList.toggle("hidden", !useS3);
+      document.getElementById("s3-settings-panel").style.display = useS3 ? "block" : "none";
       validateForm();
     }
 
@@ -413,7 +465,7 @@
       return {
         fns_base_url: api.replace(/\/+$/, ""),
         fns_token: String(parsed.apiToken).trim(),
-        fns_vault: String(parsed.vault).trim()
+        fns_vault: String(parsed.vault).trim(),
       };
     }
 
@@ -425,10 +477,15 @@
       clearFields.delete("fns_token");
       document.getElementById("fns-token-meta").textContent = "本次已导入新的 FNS Token，保存后才会写入服务端。";
       validateForm();
+      setSettingsFeedback("FNS 导入成功", "success", "已识别域名、Vault 和 Token，请确认后保存。", [
+        { label: "FNS 地址", value: parsed.fns_base_url },
+        { label: "Vault", value: parsed.fns_vault },
+        { label: "Token", value: "已填入" },
+      ]);
       setResult("已识别 FNS 配置并填充表单。", {
         fns_base_url: parsed.fns_base_url,
         fns_vault: parsed.fns_vault,
-        fns_token: "已填入"
+        fns_token: "已填入",
       });
     }
 
@@ -461,28 +518,46 @@
       clearFields.clear();
       resetChanged();
       syncImageModeUI();
+      validateForm();
+      setSettingsFeedback("等待操作", "info", "修改字段后点击“保存并生效”，右侧会显示结构化结果。", [
+        { label: "当前用户", value: data.current_user?.username || "-" },
+        { label: "图片模式", value: data.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链" },
+      ]);
       await checkFnsStatus();
     }
 
     async function checkFnsStatus() {
-      setFnsHealth("info", "正在检测 FNS 连接...");
+      setFnsFeedback("正在检测 FNS", "info", "正在请求用户信息和 vault 列表。");
       const response = await fetch("/api/admin/fns-status");
       const data = await response.json();
+      fnsStatusEl.textContent = AdminUI.prettyJson(data);
       if (!response.ok) {
-        setFnsHealth("error", data.detail || "检测失败");
-        fnsStatusEl.textContent = JSON.stringify(data, null, 2);
+        setFnsFeedback("检测失败", "error", data.detail || "无法读取 FNS 状态。");
         return;
       }
       if (!data.configured) {
-        setFnsHealth("warn", data.message || "FNS 尚未配置完整。");
+        setFnsFeedback("FNS 尚未配置", "warn", data.message || "请先填写必要的 FNS 配置。", [
+          { label: "服务地址", value: data.base_url || "未配置" },
+          { label: "Vault", value: data.vault_name || "未配置" },
+        ]);
       } else if (data.connected && data.vault_exists) {
-        setFnsHealth("success", `已连接 ${data.base_url}，vault ${data.vault_name} 可用。`);
+        setFnsFeedback("连接正常", "success", data.message || "目标 vault 可正常使用。", [
+          { label: "服务地址", value: data.base_url || "-" },
+          { label: "Vault", value: data.vault_name || "-" },
+          { label: "用户", value: data.user?.nickname || data.user?.username || "-" },
+        ]);
       } else if (data.connected) {
-        setFnsHealth("warn", data.message || "连接正常，但目标 vault 不存在。");
+        setFnsFeedback("连接正常但目标异常", "warn", data.message || "请确认目标 vault 名称。", [
+          { label: "服务地址", value: data.base_url || "-" },
+          { label: "Vault", value: data.vault_name || "-" },
+          { label: "Vault 数量", value: data.vault_count ?? "-" },
+        ]);
       } else {
-        setFnsHealth("error", data.message || "连接失败。");
+        setFnsFeedback("连接异常", "error", data.message || "无法连接 FNS。", [
+          { label: "服务地址", value: data.base_url || "未配置" },
+          { label: "Vault", value: data.vault_name || "未配置" },
+        ]);
       }
-      fnsStatusEl.textContent = JSON.stringify(data, null, 2);
     }
 
     document.getElementById("paste-fns-button").addEventListener("click", async () => {
@@ -491,11 +566,9 @@
         document.getElementById("fns-json-input").value = rawText;
         applyFnsImport(parseFnsJson(rawText));
       } catch (error) {
-        setResult(
-          error && error.message && error.message.includes("JSON")
-            ? error.message
-            : "读取剪贴板失败，请改用手动粘贴 JSON 文本。"
-        );
+        setSettingsFeedback("导入失败", "error", error && error.message && error.message.includes("JSON")
+          ? error.message
+          : "读取剪贴板失败，请改用手动粘贴 JSON 文本。");
       }
     });
 
@@ -503,7 +576,7 @@
       try {
         applyFnsImport(parseFnsJson(document.getElementById("fns-json-input").value.trim()));
       } catch (error) {
-        setResult(String(error.message || error));
+        setSettingsFeedback("解析失败", "error", String(error.message || error));
       }
     });
 
@@ -513,7 +586,7 @@
       document.getElementById("fns-token-meta").textContent = "本次保存会清空 FNS Token。";
       markChanged("fns-token");
       validateForm();
-      setResult("已标记：保存时会清空 FNS Token。");
+      setSettingsFeedback("已标记清空", "warn", "保存时会清空 FNS Token。");
     });
 
     document.getElementById("clear-image-storage-secret").addEventListener("click", () => {
@@ -522,7 +595,7 @@
       document.getElementById("image-storage-secret-meta").textContent = "本次保存会清空图床密钥。";
       markChanged("image-storage-secret-access-key");
       validateForm();
-      setResult("已标记：保存时会清空图床 Secret Access Key。");
+      setSettingsFeedback("已标记清空", "warn", "保存时会清空图床 Secret Access Key。");
     });
 
     document.getElementById("save-settings").addEventListener("click", async () => {
@@ -538,7 +611,7 @@
         image_storage_access_key_id: document.getElementById("image-storage-access-key-id").value.trim(),
         image_storage_path_template: document.getElementById("image-storage-path-template").value.trim(),
         image_storage_public_base_url: document.getElementById("image-storage-public-base-url").value.trim(),
-        clear_fields: Array.from(clearFields)
+        clear_fields: Array.from(clearFields),
       };
       const fnsToken = document.getElementById("fns-token").value.trim();
       const storageSecret = document.getElementById("image-storage-secret-access-key").value.trim();
@@ -548,13 +621,20 @@
       const response = await fetch("/api/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       setResult(response.ok ? "设置已保存并生效。" : "保存失败。", data);
       if (response.ok) {
+        setSettingsFeedback("保存成功", "success", "服务端配置已更新，新的运行参数已经生效。", [
+          { label: "FNS Vault", value: data.settings?.fns_vault || "-" },
+          { label: "图片模式", value: data.settings?.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链" },
+          { label: "临时目录清理", value: data.settings?.cleanup_temp_on_success ? "开启" : "关闭" },
+        ]);
         await loadSettings();
+        return;
       }
+      setSettingsFeedback("保存失败", "error", data.detail || "请检查表单内容后重试。");
     });
 
     document.getElementById("change-password-button").addEventListener("click", async () => {
@@ -563,19 +643,22 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           current_password: document.getElementById("current-password").value,
-          new_password: document.getElementById("new-password").value
-        })
+          new_password: document.getElementById("new-password").value,
+        }),
       });
       const data = await response.json();
       setResult(response.ok ? "密码已更新。" : "密码更新失败。", data);
       if (response.ok) {
+        setSettingsFeedback("密码已更新", "success", "管理员密码修改成功，当前会话已同步刷新。");
         document.getElementById("current-password").value = "";
         document.getElementById("new-password").value = "";
+        return;
       }
+      setSettingsFeedback("密码更新失败", "error", data.detail || "请检查当前密码和新密码。");
     });
 
     document.getElementById("check-fns-button").addEventListener("click", () => {
-      checkFnsStatus().catch((error) => setFnsHealth("error", String(error)));
+      checkFnsStatus().catch((error) => setFnsFeedback("检测失败", "error", String(error)));
     });
 
     ["fns-base-url", "fns-vault", "fns-target-dir", "fns-token", ...s3FieldIds].forEach((id) => {
@@ -595,6 +678,7 @@
     });
 
     loadSettings().catch((error) => {
+      setSettingsFeedback("设置读取失败", "error", String(error));
       setResult(String(error));
     });
   </script>

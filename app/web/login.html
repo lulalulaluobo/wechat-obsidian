@@ -4,97 +4,127 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wechat MD Server Login</title>
-  <style>
-    :root {
-      --bg: #efe8dc;
-      --card: #fffaf2;
-      --ink: #1f2430;
-      --muted: #676e7b;
-      --line: #d7c8b3;
-      --accent: #2d6a4f;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background:
-        radial-gradient(circle at top left, rgba(45,106,79,.16), transparent 26%),
-        radial-gradient(circle at bottom right, rgba(195,95,45,.12), transparent 24%),
-        var(--bg);
-      color: var(--ink);
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    }
-    .panel {
-      width: min(460px, calc(100vw - 32px));
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 24px;
-      box-shadow: 0 24px 60px rgba(54, 45, 32, .12);
-    }
-    h1 { margin: 0 0 10px; font-size: 28px; }
-    p { margin: 0 0 18px; color: var(--muted); }
-    label { display: block; margin-bottom: 8px; font-size: 14px; }
-    input, button {
-      width: 100%;
-      font: inherit;
-      border-radius: 12px;
-    }
-    input {
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      margin-bottom: 14px;
-      background: #fff;
-    }
-    button {
-      padding: 12px 14px;
-      border: 0;
-      cursor: pointer;
-      color: #fff;
-      background: var(--accent);
-    }
-    pre {
-      margin: 14px 0 0;
-      padding: 12px;
-      border-radius: 12px;
-      min-height: 56px;
-      background: #201c18;
-      color: #f4efe6;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-  </style>
+  <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
-  <section class="panel">
-    <h1>登录 Wechat MD Server</h1>
-    <p>当前服务使用单用户登录。默认账号密码是 <code>admin/admin</code>，登录后才能执行抓取和维护 FNS 配置。</p>
-    <label for="username">用户名</label>
-    <input id="username" autocomplete="username" value="admin" />
-    <label for="password">密码</label>
-    <input id="password" type="password" autocomplete="current-password" value="admin" />
-    <button id="login-submit">进入服务</button>
-    <pre id="login-result">等待登录</pre>
-  </section>
+  <main class="auth-shell">
+    <div class="auth-layout">
+      <section class="auth-hero">
+        <div>
+          <p class="eyebrow">Wechat MD Server</p>
+          <h1 class="page-title">同步服务管理台</h1>
+          <p class="page-copy">这是面向单管理员的转换后台入口。登录后可以提交公众号文章转换任务，检查 Fast Note Sync 连接状态，并统一维护图片外链策略。</p>
+        </div>
+
+        <div class="auth-hero-grid">
+          <article class="auth-hero-point">
+            <strong>转换优先</strong>
+            <p class="helper-text">首页把单篇和批量转换放在主工作区，状态信息作为辅助面板。</p>
+          </article>
+          <article class="auth-hero-point">
+            <strong>FNS 同步</strong>
+            <p class="helper-text">转换结果默认写入目标 vault 和指定目录，不再暴露本地输出目录。</p>
+          </article>
+          <article class="auth-hero-point">
+            <strong>图片策略</strong>
+            <p class="helper-text">支持微信原链或 S3 图床外链，按全局设置统一生效。</p>
+          </article>
+          <article class="auth-hero-point">
+            <strong>后台配置</strong>
+            <p class="helper-text">FNS、图片外链、运行行为和账号安全全部集中在设置中心管理。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="auth-card">
+        <div class="auth-card-top">
+          <div>
+            <p class="eyebrow">Admin Access</p>
+            <h2>管理后台登录</h2>
+            <p class="helper-text">请输入管理员账号密码进入后台。主题切换只影响当前浏览器显示。</p>
+          </div>
+          <label class="theme-switcher" for="theme-select-login">
+            <span>主题</span>
+            <select id="theme-select-login" data-theme-select>
+              <option value="system">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="stack">
+          <div class="field">
+            <label for="username">用户名</label>
+            <input id="username" autocomplete="username" placeholder="admin">
+          </div>
+          <div class="field">
+            <label for="password">密码</label>
+            <input id="password" type="password" autocomplete="current-password" placeholder="请输入管理员密码">
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button id="login-submit" class="button">进入后台</button>
+        </div>
+
+        <div id="login-feedback" class="login-feedback">
+          <div class="summary-title-row">
+            <strong>登录状态</strong>
+            <span class="status-badge info">待输入</span>
+          </div>
+          <p class="helper-text">如果这是首次部署，请使用运行时配置里生成或显式重置的管理员密码。</p>
+        </div>
+
+        <details class="raw-json">
+          <summary>原始 JSON</summary>
+          <pre id="login-result">等待登录</pre>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <script src="/assets/admin.js"></script>
   <script>
     const result = document.getElementById("login-result");
+    const feedback = document.getElementById("login-feedback");
+
+    AdminUI.initThemeControls();
+
+    function setFeedback(title, tone, description) {
+      feedback.innerHTML = `
+        <div class="summary-title-row">
+          <strong>${AdminUI.escapeHtml(title)}</strong>
+          ${AdminUI.badge(
+            tone === "success" ? "成功" : tone === "error" ? "失败" : tone === "warn" ? "需要处理" : "待输入",
+            tone
+          )}
+        </div>
+        <p class="helper-text">${AdminUI.escapeHtml(description)}</p>
+      `;
+    }
+
     document.getElementById("login-submit").addEventListener("click", async () => {
+      setFeedback("登录中", "info", "正在校验管理员身份并创建会话。");
       result.textContent = "登录中...";
       const response = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: document.getElementById("username").value.trim(),
-          password: document.getElementById("password").value
-        })
+          password: document.getElementById("password").value,
+        }),
       });
       const data = await response.json();
-      result.textContent = JSON.stringify(data, null, 2);
+      result.textContent = AdminUI.prettyJson(data);
       if (response.ok) {
+        setFeedback("登录成功", "success", "会话已建立，正在进入转换中心。");
         window.location.href = "/";
+        return;
       }
+      setFeedback("登录失败", "error", data.detail || "请检查用户名、密码或登录频率限制。");
     });
   </script>
 </body>

@@ -4,304 +4,427 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wechat MD Server</title>
-  <style>
-    :root {
-      --bg: #f4efe6;
-      --card: #fffdf8;
-      --ink: #1f2430;
-      --muted: #6a7280;
-      --line: #ded4c2;
-      --accent: #c35f2d;
-      --accent-2: #285943;
-      --warn: #9d3d2d;
-      --success-soft: #edf8f2;
-      --info-soft: #eff5ff;
-      --warn-soft: #fff4e4;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at top right, rgba(195,95,45,.14), transparent 28%),
-        radial-gradient(circle at bottom left, rgba(40,89,67,.1), transparent 26%),
-        var(--bg);
-    }
-    main { max-width: 1180px; margin: 0 auto; padding: 40px 20px 56px; }
-    h1 { margin: 0 0 8px; font-size: 34px; }
-    p.lead { margin: 0 0 24px; color: var(--muted); }
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-    }
-    .nav { display: flex; gap: 10px; }
-    .nav a, .toolbar button, .actions button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      text-decoration: none;
-      border-radius: 999px;
-      padding: 10px 14px;
-      color: #fff;
-      background: var(--accent);
-      border: 0;
-      cursor: pointer;
-      font: inherit;
-    }
-    .toolbar button, .actions button.secondary { background: var(--accent-2); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-    .card {
-      background: rgba(255,253,248,.9);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 18px 50px rgba(46, 38, 26, .08);
-      backdrop-filter: blur(10px);
-    }
-    .card h2 { margin: 0 0 14px; font-size: 20px; }
-    .hero-card {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-    .metric {
-      border-radius: 16px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(248,241,229,.88));
-    }
-    .metric strong {
-      display: block;
-      margin-top: 6px;
-      font-size: 22px;
-      word-break: break-word;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border-radius: 999px;
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .pill.success { background: var(--success-soft); color: #1e6a48; }
-    .pill.warn { background: var(--warn-soft); color: #9a5a15; }
-    .pill.error { background: #fff0ec; color: var(--warn); }
-    .pill.info { background: var(--info-soft); color: #2e5fa8; }
-    label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--muted); }
-    input, textarea {
-      width: 100%;
-      font: inherit;
-      border-radius: 12px;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      background: #fff;
-    }
-    textarea { min-height: 180px; resize: vertical; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-    pre, .result {
-      margin: 0;
-      padding: 14px;
-      border-radius: 14px;
-      background: #231f1a;
-      color: #f2eee7;
-      overflow: auto;
-      min-height: 160px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .muted { color: var(--muted); }
-    small { color: var(--muted); }
-    .banner {
-      margin-bottom: 18px;
-      padding: 16px 18px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255,253,248,.82);
-      box-shadow: 0 14px 30px rgba(46, 38, 26, .06);
-    }
-  </style>
+  <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
-  <main>
-    <div class="toolbar">
-      <div class="nav">
-        <a href="/">转换</a>
-        <a href="/settings">设置</a>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div>
+        <span class="brand-mark">Wechat MD Server</span>
+        <h1 class="brand-title">转换后台</h1>
+        <p class="brand-copy">参考同步服务后台的结构节奏，把转换提交、状态诊断和结果回查统一收拢在一个工作界面里。</p>
       </div>
-      <button id="logout-button">退出登录</button>
+
+      <nav class="sidebar-nav" aria-label="主导航">
+        <a class="nav-link active" href="/">
+          <span>转换</span>
+          <span class="status-badge info">Active</span>
+        </a>
+        <a class="nav-link" href="/settings">
+          <span>设置</span>
+          <span class="status-badge warn">Admin</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-note">
+          <strong>当前工作流</strong>
+          <p class="helper-text">首页只负责提交任务和查看结果摘要。真正的同步目标、图片模式和运行行为在设置中心统一维护。</p>
+        </div>
+        <button id="logout-button" class="button ghost">退出登录</button>
+      </div>
+    </aside>
+
+    <div class="content-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Conversion Workspace</p>
+          <h1 class="page-title">转换中心</h1>
+          <p class="page-copy">把公众号文章抓取、图片策略和 FNS 同步集中在一个转换优先的工作台里。主列负责执行转换，侧列负责看状态、结果和任务摘要。</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="quick-chip">
+            <span>当前用户</span>
+            <strong id="current-user-chip">-</strong>
+          </div>
+          <label class="theme-switcher" for="theme-select-index">
+            <span>主题</span>
+            <select id="theme-select-index" data-theme-select>
+              <option value="system">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main class="page-main">
+        <section class="section-block">
+          <div class="section-head">
+            <div>
+              <h2>工作台概览</h2>
+              <p>先确认当前同步目标和图片模式，再提交转换任务。</p>
+            </div>
+          </div>
+
+          <div class="overview-strip">
+            <article class="metric-card compact">
+              <div class="metric-label">FNS 服务</div>
+              <div class="metric-value" id="metric-fns-url">未配置</div>
+              <div class="metric-foot">当前同步基础地址</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">目标 Vault</div>
+              <div class="metric-value" id="metric-vault">未配置</div>
+              <div class="metric-foot">写入的 Obsidian 仓库</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">目标目录</div>
+              <div class="metric-value" id="metric-target-dir">未配置</div>
+              <div class="metric-foot">默认同步路径</div>
+            </article>
+            <article class="metric-card compact">
+              <div class="metric-label">图片模式</div>
+              <div class="metric-value" id="metric-image-mode">微信原链</div>
+              <div class="metric-foot" id="metric-image-detail">未启用图床外链</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="workspace-grid">
+            <div class="primary-stack">
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>单篇转换</h2>
+                      <p>适合即时处理单条公众号文章链接。</p>
+                    </div>
+                    <div class="meta-chip">转换优先</div>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="field-grid one">
+                    <div class="field">
+                      <label for="single-url">微信文章链接</label>
+                      <input id="single-url" placeholder="https://mp.weixin.qq.com/s/...">
+                    </div>
+                  </div>
+
+                  <div class="field-grid compact">
+                    <div class="field">
+                      <label for="single-timeout">超时秒数</label>
+                      <input id="single-timeout" type="number" value="30">
+                    </div>
+                    <div class="field inline-toggle">
+                      <label for="single-save-html">保留 HTML</label>
+                      <div class="checkbox-row">
+                        <input id="single-save-html" type="checkbox">
+                        <span class="helper-text">调试时保存原始 HTML</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="action-row">
+                    <button id="single-submit" class="button">执行转换</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="module-card">
+                <div class="module-header">
+                  <div class="section-head" style="margin-bottom:0;">
+                    <div>
+                      <h2>批量转换</h2>
+                      <p>支持多行链接或文件导入，适合集中处理待同步文章。</p>
+                    </div>
+                    <div class="meta-chip">任务队列</div>
+                  </div>
+                </div>
+                <div class="module-body">
+                  <div class="field-grid one">
+                    <div class="field">
+                      <label for="batch-urls">多行链接</label>
+                      <textarea id="batch-urls" placeholder="每行一个微信文章链接"></textarea>
+                    </div>
+                    <div class="field">
+                      <label for="batch-file">导入文件（txt / md / csv）</label>
+                      <input id="batch-file" type="file">
+                    </div>
+                  </div>
+
+                  <div class="field-grid compact">
+                    <div class="field">
+                      <label for="batch-timeout">超时秒数</label>
+                      <input id="batch-timeout" type="number" value="30">
+                    </div>
+                    <div class="field inline-toggle">
+                      <label for="batch-save-html">保留 HTML</label>
+                      <div class="checkbox-row">
+                        <input id="batch-save-html" type="checkbox">
+                        <span class="helper-text">批量任务同样可保留 HTML</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="action-row">
+                    <button id="batch-submit" class="button secondary">创建批量任务</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="side-stack">
+              <section class="admin-card">
+                <div class="panel-header">
+                  <div>
+                    <h3>系统状态</h3>
+                    <p>先检测当前 FNS 连接，再决定是否提交任务。</p>
+                  </div>
+                  <button id="check-fns-button" class="button ghost">检测 FNS 连接</button>
+                </div>
+                <div class="status-list">
+                  <div class="status-row">
+                    <div>
+                      <strong id="metric-health-label">待检测</strong>
+                      <div class="helper-text" id="metric-health-detail">准备读取当前配置</div>
+                    </div>
+                    <span class="status-badge info">FNS</span>
+                  </div>
+                </div>
+                <div id="service-summary" class="status-panel"></div>
+                <div class="raw-json">
+                  <details>
+                    <summary>原始 JSON</summary>
+                    <pre id="config-result">加载中...</pre>
+                  </details>
+                </div>
+              </section>
+
+              <section class="admin-card">
+                <div class="panel-header">
+                  <div>
+                    <h3>任务摘要</h3>
+                    <p>批量任务的总量、进度和成功失败统计。</p>
+                  </div>
+                </div>
+                <div id="batch-summary" class="status-panel"></div>
+                <div class="raw-json">
+                  <details>
+                    <summary>原始 JSON</summary>
+                    <pre id="batch-result">暂无任务</pre>
+                  </details>
+                </div>
+              </section>
+
+              <section class="admin-card">
+                <div class="panel-header">
+                  <div>
+                    <h3>最近结果</h3>
+                    <p>默认先看结构化摘要，需要排错时再展开原始 JSON。</p>
+                  </div>
+                </div>
+                <div id="single-summary" class="status-panel"></div>
+                <div class="raw-json">
+                  <details>
+                    <summary>原始 JSON</summary>
+                    <pre id="single-result">等待执行</pre>
+                  </details>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
     </div>
+  </div>
 
-    <h1>Wechat MD Server</h1>
-    <p class="lead">将微信公众号文章转换为 Markdown，并同步到当前 FNS，不再通过页面指定本地保存位置。</p>
-
-    <section class="banner">
-      <div class="pill info" id="fns-health-pill">待检测</div>
-      <p class="muted" id="fns-health-message" style="margin: 10px 0 0;">准备读取当前 FNS 配置。</p>
-    </section>
-
-    <section class="hero-card">
-      <article class="metric">
-        <span class="muted">同步到当前 FNS</span>
-        <strong id="fns-base-url">-</strong>
-        <span class="muted">服务地址</span>
-      </article>
-      <article class="metric">
-        <span class="muted">目标 Vault</span>
-        <strong id="fns-vault">-</strong>
-        <span class="muted">笔记仓库</span>
-      </article>
-      <article class="metric">
-        <span class="muted">目标目录</span>
-        <strong id="fns-target-dir">-</strong>
-        <span class="muted">同步路径</span>
-      </article>
-      <article class="metric">
-        <span class="muted">当前登录用户</span>
-        <strong id="current-user">-</strong>
-        <span class="muted">单用户模式</span>
-      </article>
-      <article class="metric">
-        <span class="muted">图片模式</span>
-        <strong id="image-mode-label">-</strong>
-        <span class="muted">微信原链或 S3 外链</span>
-      </article>
-    </section>
-
-    <div class="actions" style="margin: 0 0 18px;">
-      <button id="check-fns-button" class="secondary">检测 FNS 连接</button>
-    </div>
-
-    <div class="grid">
-      <section class="card">
-        <h2>单篇转换</h2>
-        <label for="single-url">微信文章链接</label>
-        <input id="single-url" placeholder="https://mp.weixin.qq.com/s/..." />
-        <div class="row">
-          <div>
-            <label for="single-timeout">超时秒数</label>
-            <input id="single-timeout" type="number" value="30" />
-          </div>
-          <div>
-            <label for="single-save-html">保留 HTML</label>
-            <input id="single-save-html" type="checkbox" style="width:auto; transform: translateY(10px);" />
-          </div>
-        </div>
-        <div class="actions">
-          <button id="single-submit">执行转换</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>批量转换</h2>
-        <label for="batch-urls">多行链接</label>
-        <textarea id="batch-urls" placeholder="每行一个微信文章链接"></textarea>
-        <label for="batch-file">或导入文件（txt / md / csv）</label>
-        <input id="batch-file" type="file" />
-        <div class="row">
-          <div>
-            <label for="batch-timeout">超时秒数</label>
-            <input id="batch-timeout" type="number" value="30" />
-          </div>
-          <div>
-            <label for="batch-save-html">保留 HTML</label>
-            <input id="batch-save-html" type="checkbox" style="width:auto; transform: translateY(10px);" />
-          </div>
-        </div>
-        <div class="actions">
-          <button id="batch-submit" class="secondary">创建批量任务</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>服务状态</h2>
-        <pre id="config-result">加载中...</pre>
-      </section>
-
-      <section class="card">
-        <h2>单篇结果</h2>
-        <pre id="single-result">等待执行</pre>
-      </section>
-
-      <section class="card" style="grid-column: 1 / -1;">
-        <h2>批量任务</h2>
-        <small>创建任务后会自动轮询状态。</small>
-        <div class="result" id="batch-result">暂无任务</div>
-      </section>
-    </div>
-  </main>
+  <script src="/assets/admin.js"></script>
   <script>
     const configResult = document.getElementById("config-result");
     const singleResult = document.getElementById("single-result");
     const batchResult = document.getElementById("batch-result");
 
-    function setFnsHealth(state, message) {
-      const pill = document.getElementById("fns-health-pill");
-      pill.className = `pill ${state}`;
-      pill.textContent = state === "success" ? "连接正常" : state === "warn" ? "部分可用" : state === "error" ? "连接异常" : "待检测";
-      document.getElementById("fns-health-message").textContent = message;
+    AdminUI.initThemeControls();
+
+    function imageModeLabel(mode) {
+      return mode === "s3_hotlink" ? "S3 图床外链" : "微信原链";
     }
 
-    function updateHero(data) {
-      document.getElementById("fns-base-url").textContent = data.fns_base_url || "未配置";
-      document.getElementById("fns-vault").textContent = data.fns_vault || "未配置";
-      document.getElementById("fns-target-dir").textContent = data.fns_target_dir || "未配置";
-      document.getElementById("current-user").textContent = data.current_user?.username || "-";
-      document.getElementById("image-mode-label").textContent = data.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链";
+    function setOverview(config) {
+      AdminUI.setText("metric-fns-url", config.fns_base_url || "未配置");
+      AdminUI.setText("metric-vault", config.fns_vault || "未配置");
+      AdminUI.setText("metric-target-dir", config.fns_target_dir || "未配置");
+      AdminUI.setText("metric-image-mode", imageModeLabel(config.image_mode));
+      AdminUI.setText(
+        "metric-image-detail",
+        config.image_mode === "s3_hotlink"
+          ? `${config.image_public_base_url || "未配置域名"}`
+          : "Markdown 保留微信图片原链"
+      );
+      AdminUI.setText("current-user-chip", config.current_user?.username || "-");
+    }
+
+    function setHealth(label, detail, tone) {
+      AdminUI.setText("metric-health-label", label);
+      AdminUI.setText("metric-health-detail", detail);
+      const healthLabel = document.getElementById("metric-health-label");
+      healthLabel.style.color =
+        tone === "success" ? "var(--success)" :
+        tone === "error" ? "var(--danger)" :
+        tone === "warn" ? "var(--warning)" :
+        "var(--primary)";
+    }
+
+    function renderServiceSummary(data, tone, heading, description) {
+      const items = [
+        { label: "FNS 服务", value: data.fns_base_url || data.base_url || "未配置" },
+        { label: "Vault", value: data.fns_vault || data.vault_name || "未配置" },
+        { label: "目录", value: data.fns_target_dir || "00_Inbox/微信公众号" },
+        { label: "图片模式", value: imageModeLabel(data.image_mode || "wechat_hotlink") },
+      ];
+      AdminUI.setHtml("service-summary", AdminUI.resultPanel({
+        title: heading,
+        tone,
+        statusText: tone === "success" ? "正常" : tone === "error" ? "异常" : tone === "warn" ? "待处理" : "已加载",
+        description,
+        items,
+      }));
+    }
+
+    function renderSingleSummary(payload) {
+      if (!payload) {
+        AdminUI.setHtml("single-summary", AdminUI.resultPanel({
+          title: "等待执行",
+          tone: "info",
+          statusText: "空闲",
+          description: "尚未提交单篇转换任务。",
+          items: [
+            { label: "处理状态", value: "等待输入链接" },
+            { label: "同步类型", value: "FNS" },
+          ],
+        }));
+        return;
+      }
+
+      if (payload.status !== "success") {
+        AdminUI.setHtml("single-summary", AdminUI.resultPanel({
+          title: "执行失败",
+          tone: "error",
+          statusText: "失败",
+          description: payload.detail || "请求未成功完成。",
+          items: [
+            { label: "处理状态", value: "单篇转换失败" },
+            { label: "错误信息", value: payload.detail || "-" },
+          ],
+        }));
+        return;
+      }
+
+      AdminUI.setHtml("single-summary", AdminUI.resultPanel({
+        title: payload.result?.title || "转换完成",
+        tone: "success",
+        statusText: "成功",
+        description: "文章已完成转换，并按当前策略同步。",
+        items: [
+          { label: "同步路径", value: payload.sync?.path || payload.sync?.markdown_file || "-" },
+          { label: "同步类型", value: payload.sync?.target || payload.output_target || "-" },
+          { label: "图片模式", value: imageModeLabel(payload.result?.image_mode || "wechat_hotlink") },
+          { label: "临时文件", value: payload.local_artifacts?.retained ? `保留在 ${payload.local_artifacts.workdir}` : "已清理" },
+        ],
+      }));
+    }
+
+    function renderBatchSummary(payload) {
+      if (!payload) {
+        AdminUI.setHtml("batch-summary", AdminUI.resultPanel({
+          title: "暂无任务",
+          tone: "info",
+          statusText: "空闲",
+          description: "创建批量任务后会在这里显示进度。",
+          items: [
+            { label: "已完成", value: "0" },
+            { label: "成功 / 失败", value: "0 / 0" },
+          ],
+        }));
+        return;
+      }
+
+      const tone = payload.status === "completed"
+        ? (payload.failure_count > 0 ? "warn" : "success")
+        : payload.status === "running"
+          ? "info"
+          : "warn";
+      AdminUI.setHtml("batch-summary", AdminUI.resultPanel({
+        title: `任务 ${payload.job_id || "-"}`,
+        tone,
+        statusText: payload.status || "queued",
+        description: payload.status === "completed" ? "批量任务已结束。" : "批量任务正在执行或等待中。",
+        items: [
+          { label: "总数", value: payload.total ?? "-" },
+          { label: "已完成", value: payload.completed ?? "-" },
+          { label: "成功 / 失败", value: `${payload.success_count ?? 0} / ${payload.failure_count ?? 0}` },
+          { label: "工作目录", value: payload.output_dir || "-" },
+        ],
+      }));
     }
 
     async function loadConfig() {
       const response = await fetch("/api/config");
       const data = await response.json();
-      configResult.textContent = JSON.stringify(data, null, 2);
-      updateHero(data);
+      configResult.textContent = AdminUI.prettyJson(data);
+      setOverview(data);
       if (data.fns_enabled) {
-        setFnsHealth("info", "FNS 配置已读取，可以直接检测连通性。");
+        setHealth("已加载", "当前 FNS 配置可用，可继续检测连通性。", "info");
+        renderServiceSummary(data, "info", "服务配置已加载", "当前配置已从服务端读取。");
       } else {
-        setFnsHealth("warn", "FNS 尚未配置完整，请先去设置页。");
+        setHealth("待配置", "FNS 尚未配置完整，请先去设置页。", "warn");
+        renderServiceSummary(data, "warn", "FNS 尚未配置", "请先在设置中心填写并保存 FNS 信息。");
       }
     }
 
     async function checkFnsStatus() {
-      setFnsHealth("info", "正在检测 FNS 连接...");
+      setHealth("检测中", "正在检测 FNS 连接，请稍候。", "info");
       const response = await fetch("/api/admin/fns-status");
       const data = await response.json();
-      configResult.textContent = JSON.stringify(data, null, 2);
+      configResult.textContent = AdminUI.prettyJson(data);
       if (!response.ok) {
-        setFnsHealth("error", data.detail || "检测失败");
+        setHealth("异常", data.detail || "检测失败", "error");
+        renderServiceSummary(data, "error", "检测失败", data.detail || "无法读取 FNS 状态。");
         return;
       }
       if (!data.configured) {
-        setFnsHealth("warn", data.message || "FNS 尚未配置完整。");
+        setHealth("待配置", data.message || "FNS 尚未配置完整。", "warn");
+        renderServiceSummary(data, "warn", "FNS 尚未配置", data.message || "请先完成配置。");
       } else if (data.connected && data.vault_exists) {
-        setFnsHealth("success", `已连接 ${data.base_url}，vault ${data.vault_name} 可用。`);
+        setHealth("连接正常", `已连接 ${data.base_url}，vault 可用。`, "success");
+        renderServiceSummary(data, "success", "FNS 连接正常", data.message || "目标 vault 可正常写入。");
       } else if (data.connected) {
-        setFnsHealth("warn", data.message || "连接正常，但目标 vault 不存在。");
+        setHealth("部分可用", data.message || "连接正常，但 vault 不存在。", "warn");
+        renderServiceSummary(data, "warn", "连接正常但目标异常", data.message || "请确认目标 vault 名称。");
       } else {
-        setFnsHealth("error", data.message || "连接失败。");
+        setHealth("连接异常", data.message || "连接失败。", "error");
+        renderServiceSummary(data, "error", "FNS 连接异常", data.message || "请检查服务地址或凭证。");
       }
     }
 
     document.getElementById("single-submit").addEventListener("click", async () => {
+      renderSingleSummary({ status: "pending", detail: "单篇任务正在处理。" });
       singleResult.textContent = "处理中...";
       const payload = {
         url: document.getElementById("single-url").value.trim(),
         timeout: Number(document.getElementById("single-timeout").value || 30),
-        save_html: document.getElementById("single-save-html").checked
+        save_html: document.getElementById("single-save-html").checked,
       };
       const response = await fetch("/api/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
-      singleResult.textContent = JSON.stringify(data, null, 2);
+      singleResult.textContent = AdminUI.prettyJson(data);
+      renderSingleSummary(response.ok ? data : { status: "error", detail: data.detail || "执行失败" });
     });
 
     async function pollJob(jobId) {
@@ -309,7 +432,8 @@
       while (keepPolling) {
         const response = await fetch(`/api/jobs/${jobId}`);
         const data = await response.json();
-        batchResult.textContent = JSON.stringify(data, null, 2);
+        batchResult.textContent = AdminUI.prettyJson(data);
+        renderBatchSummary(data);
         keepPolling = data.status === "queued" || data.status === "running";
         if (keepPolling) {
           await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -318,6 +442,7 @@
     }
 
     document.getElementById("batch-submit").addEventListener("click", async () => {
+      renderBatchSummary({ status: "queued", total: 0, completed: 0, success_count: 0, failure_count: 0 });
       batchResult.textContent = "创建任务中...";
       const fileInput = document.getElementById("batch-file");
       const formData = new FormData();
@@ -329,27 +454,35 @@
       }
       const response = await fetch("/api/batch", {
         method: "POST",
-        body: formData
+        body: formData,
       });
       const data = await response.json();
-      batchResult.textContent = JSON.stringify(data, null, 2);
+      batchResult.textContent = AdminUI.prettyJson(data);
+      renderBatchSummary(data);
       if (data.job_id) {
         pollJob(data.job_id);
       }
     });
 
     document.getElementById("check-fns-button").addEventListener("click", () => {
-      checkFnsStatus().catch((error) => setFnsHealth("error", String(error)));
-    });
-
-    loadConfig().catch((error) => {
-      configResult.textContent = String(error);
-      setFnsHealth("error", String(error));
+      checkFnsStatus().catch((error) => {
+        setHealth("连接异常", String(error), "error");
+        renderServiceSummary({}, "error", "检测失败", String(error));
+      });
     });
 
     document.getElementById("logout-button").addEventListener("click", async () => {
       await fetch("/api/session", { method: "DELETE" });
       window.location.href = "/login";
+    });
+
+    renderSingleSummary(null);
+    renderBatchSummary(null);
+
+    loadConfig().catch((error) => {
+      configResult.textContent = String(error);
+      setHealth("连接异常", String(error), "error");
+      renderServiceSummary({}, "error", "配置读取失败", String(error));
     });
   </script>
 </body>
