@@ -679,7 +679,13 @@ def send_feishu_message(open_id: str, text: str, http_session=None) -> dict[str,
         },
         timeout=max(settings.default_timeout, 15),
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as error:
+        detail = response.text.strip()
+        if detail:
+            raise RuntimeError(f"飞书发送消息失败: {response.status_code} {detail}") from error
+        raise RuntimeError(f"飞书发送消息失败: HTTP {response.status_code}") from error
     return response.json()
 
 

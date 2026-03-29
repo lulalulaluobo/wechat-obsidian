@@ -38,8 +38,7 @@ docker compose logs -f
 Production-oriented Compose:
 
 ```bash
-cp .env.prod.example .env.prod
-docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml logs -f
 ```
@@ -62,12 +61,11 @@ Deployment files:
 - `.dockerignore`
 - `docker-compose.yml`
 - `docker-compose.prod.yml`
-- `.env.prod.example`
 
 Image size expectation:
 
-- recommended build target: about `180MB - 280MB`
-- conservative first-pass builds may land around `250MB - 340MB`
+- current slim build is typically around `65MB - 80MB`
+- exact size depends on image metadata and wheel reuse
 
 Why not Alpine:
 
@@ -127,6 +125,34 @@ Optional environment variables:
   - `wechat_hotlink`: keep original WeChat image URLs in Markdown
   - `s3_hotlink`: upload static images to a generic S3-compatible object store and use `public_base_url/object_key`
 - In `s3_hotlink`, GIF and SVG keep the original WeChat image URLs.
+- Optional AI polish can generate:
+  - frontmatter
+  - summary
+  - tags
+  - template blocks
+  - optional `content_polished` body output
+- AI body polish is opt-in and can be overridden per single/batch run.
+- The settings page supports Clipper-style template import from a JSON file and maps it into the internal interpreter template fields.
+
+## AI Polish
+
+- Built-in AI workflow is optional and disabled by default.
+- Supported provider types:
+  - `OpenAI Compatible`
+  - `Anthropic`
+  - `Gemini`
+  - `Ollama`
+  - `OpenRouter`
+- Built-in providers are read-only presets; you can also add custom providers.
+- Multiple models can be configured and one current model is selected for execution.
+- `Test AI Connectivity` validates the currently selected model/provider pair without running a full article conversion.
+- Interpreter-related settings include:
+  - context template
+  - prompt template
+  - frontmatter template
+  - body template
+  - optional extra body block generation
+  - optional full body polish output (`content_polished`)
 
 ## Settings UI
 
@@ -139,6 +165,28 @@ Optional environment variables:
 - Clipboard import only fills the form. Settings are not persisted until you click save.
 - Secret fields are masked on reload and never returned in plaintext from the settings API.
 - S3 image settings are entered manually in the settings page. There is no Obsidian plugin or R2 config file dependency.
+- The AI section now separates:
+  - current model selection
+  - provider management
+  - model pool management
+  - interpreter template configuration
+- Single conversion clears the article URL field after success.
+- Batch creation clears the textarea and uploaded file selection after success.
+
+## Bot Integrations
+
+- Telegram Bot webhook is supported for single-article conversion.
+- Feishu Bot webhook is supported for single-article conversion.
+- Both bot flows:
+  - accept one WeChat article link per message
+  - immediately acknowledge receipt
+  - run conversion asynchronously
+  - send a completion reply with title, sync path, and image mode
+- Feishu v1 currently supports:
+  - private chat only
+  - `open_id` whitelist (can be left empty during bootstrap)
+  - developer-server webhook mode
+- If Feishu message sending fails due to missing app permissions, the webhook request is still accepted and the failure is logged instead of crashing the webhook handler.
 
 ## Reset Admin Password
 
@@ -185,8 +233,8 @@ Recommended deployment steps:
 1. Copy `.env.example` to `.env` and set a strong `WECHAT_MD_APP_MASTER_KEY`.
 2. Set `WECHAT_MD_SESSION_COOKIE_SECURE=true`.
 3. Create the host `data/` directory if needed.
-4. Copy `.env.prod.example` to `.env.prod`.
-5. Run `docker compose -f docker-compose.prod.yml build` and `docker compose -f docker-compose.prod.yml up -d`.
+4. Edit `docker-compose.prod.yml` and replace the placeholder runtime secrets.
+5. Run `docker compose -f docker-compose.prod.yml pull` and `docker compose -f docker-compose.prod.yml up -d`.
 6. The production compose file still publishes `8765` directly, so you can access it with `http://<server-ip>:8765` if needed.
 7. If you later want reverse proxy only, change the port binding back to loopback and place Nginx or Caddy in front.
 8. If you prefer a non-container deployment, the systemd sample in [wechat-md-server.service.example](/path/to/wechat-md-server/deploy/systemd/wechat-md-server.service.example) remains available.

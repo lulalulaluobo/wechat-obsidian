@@ -22,6 +22,7 @@ DEFAULT_IMAGE_MODE = "wechat_hotlink"
 IMAGE_MODE_VALUES = {"wechat_hotlink", "s3_hotlink"}
 DEFAULT_TELEGRAM_NOTIFY_ON_COMPLETE = True
 DEFAULT_FEISHU_NOTIFY_ON_COMPLETE = True
+FEISHU_WEBHOOK_PATH = "/api/integrations/feishu/webhook"
 DEFAULT_AI_MODEL = "gpt-5.4-mini"
 DEFAULT_AI_PROMPT_TEMPLATE = """你是一个 Obsidian 笔记解释器。请基于提供的标题、作者、原文链接和清洗后的 Markdown 正文，提炼结构化笔记变量。
 
@@ -223,14 +224,14 @@ class Settings:
             and self.feishu_app_secret
             and self.feishu_verification_token
             and self.feishu_webhook_public_base_url
-            and self.feishu_allowed_open_ids
         )
 
     @property
     def feishu_webhook_url(self) -> str | None:
         if not self.feishu_webhook_public_base_url:
             return None
-        return f"{self.feishu_webhook_public_base_url.rstrip('/')}/api/integrations/feishu/webhook"
+        normalized_base = _normalize_feishu_webhook_public_base_url(self.feishu_webhook_public_base_url)
+        return f"{normalized_base.rstrip('/')}{FEISHU_WEBHOOK_PATH}"
 
     @property
     def ai_configured(self) -> bool:
@@ -434,7 +435,10 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
         raw_value = payload.get(field)
         if raw_value is None:
             continue
-        feishu_settings[FEISHU_TEXT_FIELD_MAP[field]] = str(raw_value).strip()
+        normalized_value = str(raw_value).strip()
+        if field == "feishu_webhook_public_base_url":
+            normalized_value = _normalize_feishu_webhook_public_base_url(normalized_value)
+        feishu_settings[FEISHU_TEXT_FIELD_MAP[field]] = normalized_value
 
     for field in FEISHU_SECRET_FIELDS:
         if field not in payload:
@@ -600,7 +604,7 @@ def update_feishu_webhook_state(status: str, message: str, webhook_url: str | No
     feishu["webhook_status"] = (status or "inactive").strip() or "inactive"
     feishu["webhook_message"] = (message or "").strip()
     if webhook_url is not None:
-        feishu["webhook_public_base_url"] = webhook_url.rsplit("/api/integrations/feishu/webhook", 1)[0] if webhook_url else ""
+        feishu["webhook_public_base_url"] = _normalize_feishu_webhook_public_base_url(webhook_url) if webhook_url else ""
     current["user_settings"]["feishu"] = feishu
     _write_runtime_config(config_path, current)
     return current
@@ -767,6 +771,8 @@ def get_settings() -> Settings:
     feishu_webhook_public_base_url = str(
         feishu.get("webhook_public_base_url") or os.environ.get("WECHAT_MD_FEISHU_WEBHOOK_PUBLIC_BASE_URL") or ""
     ).strip() or None
+    if feishu_webhook_public_base_url:
+        feishu_webhook_public_base_url = _normalize_feishu_webhook_public_base_url(feishu_webhook_public_base_url) or None
     feishu_allowed_open_ids = tuple(_normalize_identifier_list(feishu.get("allowed_open_ids") or os.environ.get("WECHAT_MD_FEISHU_ALLOWED_OPEN_IDS")))
     feishu_notify_on_complete = _as_bool(
         feishu.get("notify_on_complete"),
@@ -1037,7 +1043,7 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
                 "app_secret_encrypted": encrypt_secret(str(feishu.get("app_secret") or "")),
                 "verification_token_encrypted": encrypt_secret(str(feishu.get("verification_token") or "")),
                 "encrypt_key_encrypted": encrypt_secret(str(feishu.get("encrypt_key") or "")),
-                "webhook_public_base_url": str(feishu.get("webhook_public_base_url") or "").strip(),
+                "webhook_public_base_url": _normalize_feishu_webhook_public_base_url(feishu.get("webhook_public_base_url")),
                 "allowed_open_ids": _normalize_identifier_list(feishu.get("allowed_open_ids")),
                 "notify_on_complete": _as_bool(feishu.get("notify_on_complete"), default=DEFAULT_FEISHU_NOTIFY_ON_COMPLETE),
                 "webhook_status": str(feishu.get("webhook_status") or "inactive").strip() or "inactive",
@@ -1378,7 +1384,7 @@ def _validate_runtime_config(data: dict[str, Any]) -> None:
             raise ValueError("Telegram Bot 配置不完整，缺少字段: " + ", ".join(missing_telegram))
 
     feishu = user_settings["feishu"]
-    feishu_webhook_public_base_url = str(feishu.get("webhook_public_base_url") or "").strip()
+    feishu_webhook_public_base_url = _normalize_feishu_webhook_public_base_url(feishu.get("webhook_public_base_url"))
     if feishu_webhook_public_base_url and not feishu_webhook_public_base_url.startswith(("http://", "https://")):
         raise ValueError("飞书 Webhook 对外基础地址必须以 http:// 或 https:// 开头")
     if _as_bool(feishu.get("enabled"), default=False):
@@ -1391,8 +1397,6 @@ def _validate_runtime_config(data: dict[str, Any]) -> None:
             missing_feishu.append("verification_token")
         if not feishu_webhook_public_base_url:
             missing_feishu.append("webhook_public_base_url")
-        if not _normalize_identifier_list(feishu.get("allowed_open_ids")):
-            missing_feishu.append("allowed_open_ids")
         if missing_feishu:
             raise ValueError("飞书 Bot 配置不完整，缺少字段: " + ", ".join(missing_feishu))
 
@@ -1448,3 +1452,12 @@ def _normalize_identifier_list(value: Any) -> list[str]:
         seen.add(part)
         deduped.append(part)
     return deduped
+
+
+def _normalize_feishu_webhook_public_base_url(value: Any) -> str:
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    if raw.endswith(FEISHU_WEBHOOK_PATH):
+        return raw[: -len(FEISHU_WEBHOOK_PATH)].rstrip("/")
+    return raw

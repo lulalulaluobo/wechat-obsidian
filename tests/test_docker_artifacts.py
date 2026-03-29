@@ -32,11 +32,15 @@ class DockerArtifactsTests(unittest.TestCase):
         self.assertIn("./data:/app/data", compose)
         self.assertIn('"8765:8765"', compose)
 
-    def test_docker_compose_prod_uses_prod_env_and_public_port_binding(self):
+    def test_docker_compose_prod_uses_inline_runtime_environment_and_public_port_binding(self):
         compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
 
         self.assertIn("wechat-md-server:", compose)
-        self.assertIn(".env.prod", compose)
+        self.assertIn('image: your-namespace/wechat-md-server:latest', compose)
+        self.assertIn("environment:", compose)
+        self.assertIn("WECHAT_MD_APP_MASTER_KEY:", compose)
+        self.assertIn("WECHAT_MD_ADMIN_USERNAME:", compose)
+        self.assertIn("WECHAT_MD_ADMIN_PASSWORD:", compose)
         self.assertIn('"8765:8765"', compose)
         self.assertIn("./data:/app/data", compose)
         self.assertIn("healthcheck:", compose)

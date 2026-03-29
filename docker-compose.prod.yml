@@ -1,14 +1,13 @@
 services:
   wechat-md-server:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: wechat-md-server:prod
+    image: your-namespace/wechat-md-server:latest
     container_name: wechat-md-server
     restart: unless-stopped
-    env_file:
-      - .env.prod
     environment:
+      WECHAT_MD_APP_MASTER_KEY: "replace-with-your-master-key"
+      WECHAT_MD_ADMIN_USERNAME: "admin"
+      WECHAT_MD_ADMIN_PASSWORD: "replace-with-your-admin-password"
+      WECHAT_MD_SESSION_COOKIE_SECURE: "true"
       WECHAT_MD_RUNTIME_CONFIG_PATH: /app/data/runtime-config.json
       WECHAT_MD_DEFAULT_OUTPUT_DIR: /app/data/workdir-output
     ports:

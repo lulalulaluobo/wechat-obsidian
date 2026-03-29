@@ -360,12 +360,12 @@ async def feishu_webhook(
     request: Request,
 ) -> dict[str, Any]:
     settings = get_settings()
-    if not settings.feishu_enabled:
-        return {"status": "ignored", "reason": "feishu_disabled"}
-
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="飞书 webhook payload 无效")
+
+    if payload.get("type") == "url_verification" or "encrypt" in payload:
+        print(f"[feishu] webhook payload={_sanitize_feishu_debug_payload(payload)}")
 
     event_type = str(payload.get("type") or "").strip()
     if event_type == "url_verification":
@@ -374,26 +374,30 @@ async def feishu_webhook(
             raise HTTPException(status_code=403, detail="飞书 verification token 无效")
         return {"challenge": str(payload.get("challenge") or "")}
 
+    if not settings.feishu_enabled:
+        return {"status": "ignored", "reason": "feishu_disabled"}
+
     text, open_id, chat_type = extract_feishu_message_text(payload)
     if not open_id:
         return {"status": "ignored", "reason": "missing_open_id"}
+    print(f"[feishu] received message open_id={open_id} chat_type={chat_type}")
     if chat_type != "p2p":
         return {"status": "ignored", "reason": "chat_type_not_supported"}
-    if open_id not in settings.feishu_allowed_open_ids:
+    if settings.feishu_allowed_open_ids and open_id not in settings.feishu_allowed_open_ids:
         return {"status": "ignored", "reason": "open_id_not_allowed"}
 
     url, url_count = extract_single_wechat_url(text)
     if url_count == 0 or not url:
-        send_feishu_message(open_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
+        _safe_send_feishu_message(open_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
         return {"status": "replied", "reason": "no_link"}
     if url_count > 1:
-        send_feishu_message(open_id, "一次只支持一篇文章，请只发送一条微信文章链接。")
+        _safe_send_feishu_message(open_id, "一次只支持一篇文章，请只发送一条微信文章链接。")
         return {"status": "replied", "reason": "multiple_links"}
     if not settings.fns_enabled:
-        send_feishu_message(open_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
+        _safe_send_feishu_message(open_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
         return {"status": "replied", "reason": "fns_not_configured"}
 
-    send_feishu_message(open_id, "已接收，开始转换。")
+    _safe_send_feishu_message(open_id, "已接收，开始转换。")
     submit_feishu_convert_task(url, open_id)
     return {"status": "accepted"}
 
@@ -449,3 +453,25 @@ def _require_access(session_cookie: str | None) -> None:
 def is_authenticated(session_cookie: str | None) -> bool:
     settings = get_settings()
     return verify_session_token(session_cookie, settings.username, settings.password_hash, settings.session_secret)
+
+
+def _safe_send_feishu_message(open_id: str, text: str) -> None:
+    try:
+        send_feishu_message(open_id, text)
+    except Exception as error:
+        print(f"[feishu] send message failed open_id={open_id}: {error}")
+
+
+def _sanitize_feishu_debug_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key == "token":
+            sanitized[key] = "***"
+        elif key == "encrypt":
+            encrypted = str(value or "")
+            sanitized[key] = {"present": bool(encrypted), "length": len(encrypted)}
+        elif key == "challenge":
+            sanitized[key] = str(value or "")
+        else:
+            sanitized[key] = value
+    return sanitized

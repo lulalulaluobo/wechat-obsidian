@@ -38,8 +38,7 @@ docker compose logs -f
 面向生产的 Compose：
 
 ```bash
-cp .env.prod.example .env.prod
-docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml logs -f
 ```
@@ -62,12 +61,11 @@ docker compose -f docker-compose.prod.yml logs -f
 - `.dockerignore`
 - `docker-compose.yml`
 - `docker-compose.prod.yml`
-- `.env.prod.example`
 
 镜像体积预估：
 
-- 推荐构建目标约为 `180MB - 280MB`
-- 偏保守的第一版构建可能落在 `250MB - 340MB`
+- 当前 slim 构建通常约为 `65MB - 80MB`
+- 具体大小会受镜像元数据和 wheels 复用情况影响
 
 为什么不选 Alpine：
 
@@ -127,6 +125,34 @@ docker compose -f docker-compose.prod.yml logs -f
   - `wechat_hotlink`：Markdown 中保留原始微信图片链接
   - `s3_hotlink`：把静态图片上传到兼容 S3 的对象存储，并使用 `public_base_url/object_key`
 - 在 `s3_hotlink` 模式下，GIF 和 SVG 继续保留原始微信图片链接。
+- 可选 AI 润色可以生成：
+  - frontmatter
+  - summary
+  - tags
+  - 模板块内容
+  - 可选的 `content_polished` 正文
+- 正文润色默认关闭，并且单篇/批量都支持单次覆盖。
+- 设置页支持从 Clipper JSON 文件导入模板，并映射到当前解释器模板字段。
+
+## AI 润色
+
+- 内置 AI 工作流是可选增强，默认关闭。
+- 当前支持的 Provider 类型：
+  - `OpenAI Compatible`
+  - `Anthropic`
+  - `Gemini`
+  - `Ollama`
+  - `OpenRouter`
+- 内置 Provider 为只读预设，同时也支持新增自定义 Provider。
+- 可以维护多个模型，但运行时只使用当前选中的一个模型。
+- `测试 AI 连通性` 会测试当前选中的 Provider/模型组合，不会真正执行文章转换。
+- 解释器相关设置包括：
+  - 上下文模板
+  - 提示词模板
+  - frontmatter 模板
+  - body 模板
+  - 可选额外正文补充块
+  - 可选全文润色输出 `content_polished`
 
 ## 设置页
 
@@ -139,6 +165,28 @@ docker compose -f docker-compose.prod.yml logs -f
 - 剪贴板导入只会填充表单，只有点击保存后才会真正持久化。
 - 敏感字段在重新加载后会以掩码显示，不会以明文从设置 API 返回。
 - S3 图片配置需要在设置页手工填写，不依赖 Obsidian 插件或 R2 配置文件。
+- AI 区现在分为：
+  - 当前模型选择
+  - Provider 管理
+  - 模型池管理
+  - 解释器模板配置
+- 单篇转换成功后会自动清空文章链接输入框。
+- 批量任务创建成功后会清空多行链接框和文件选择。
+
+## Bot 集成
+
+- 已支持 Telegram Bot webhook 单篇转换。
+- 已支持飞书 Bot webhook 单篇转换。
+- 两类 Bot 入口都会：
+  - 每条消息只接受一条公众号文章链接
+  - 先回执“已接收，开始转换”
+  - 异步执行转换
+  - 完成后回执标题、同步路径和图片模式
+- 飞书 v1 当前支持：
+  - 仅私聊
+  - `open_id` 白名单（联调阶段可留空）
+  - 开发者服务器 webhook 模式
+- 如果飞书因为应用权限不足而发送回执失败，webhook 不会直接崩溃，而是记日志继续返回 `200`。
 
 ## 重置管理员密码
 
@@ -185,8 +233,8 @@ PowerShell 包装脚本：
 1. 把 `.env.example` 复制为 `.env`，并设置强随机的 `WECHAT_MD_APP_MASTER_KEY`
 2. 设置 `WECHAT_MD_SESSION_COOKIE_SECURE=true`
 3. 如有需要，先创建宿主机 `data/` 目录
-4. 把 `.env.prod.example` 复制为 `.env.prod`
-5. 运行 `docker compose -f docker-compose.prod.yml build` 和 `docker compose -f docker-compose.prod.yml up -d`
+4. 编辑 `docker-compose.prod.yml`，把占位的运行时密钥替换成真实值
+5. 运行 `docker compose -f docker-compose.prod.yml pull` 和 `docker compose -f docker-compose.prod.yml up -d`
 6. 生产版 compose 目前仍直接暴露 `8765`，因此可以直接通过 `http://<server-ip>:8765` 访问
 7. 如果后面想改成只走反代，把端口绑定改回 loopback，并在前面加 Nginx 或 Caddy
 8. 如果你不想容器化，仍可以使用 [wechat-md-server.service.example](/path/to/wechat-md-server/deploy/systemd/wechat-md-server.service.example) 里的 systemd 样例
