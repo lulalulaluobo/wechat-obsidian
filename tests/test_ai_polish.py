@@ -104,6 +104,33 @@ class AIPolishTests(unittest.TestCase):
         self.assertEqual(payload["ai_polish"]["enabled"], True)
         self.assertIn("ai failed", payload["ai_polish"]["message"])
 
+    def test_execute_single_conversion_raises_without_sync_when_ai_is_required_for_bot(self):
+        markdown_path = Path(self.temp_dir.name) / "article-required.md"
+        markdown_path.write_text("# 标题\n\n正文", encoding="utf-8")
+        with patch("app.services.run_pipeline", return_value={"title": "标题", "author": "作者", "original_url": "https://mp.weixin.qq.com/s/example", "markdown_file": str(markdown_path), "folder_name": "01_标题", "image_mode": "wechat_hotlink"}):
+            with patch("app.services.sync_result_to_output") as mocked_sync:
+                with patch(
+                    "app.services.apply_ai_polish_to_result",
+                    return_value={
+                        "enabled": True,
+                        "status": "failed",
+                        "template_applied": False,
+                        "content_polished": False,
+                        "message": "模板未成功应用",
+                    },
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "AI 润色失败"):
+                        execute_single_conversion(
+                            url="https://mp.weixin.qq.com/s/example",
+                            timeout=30,
+                            save_html=False,
+                            output_target="local",
+                            ai_enabled=True,
+                            require_ai_success=True,
+                        )
+
+        mocked_sync.assert_not_called()
+
     def test_apply_ai_polish_does_not_duplicate_content_when_body_template_contains_content(self):
         markdown_path = Path(self.temp_dir.name) / "clipper.md"
         markdown_path.write_text("# 原文标题\n\n正文内容", encoding="utf-8")

@@ -151,6 +151,7 @@ def execute_single_conversion(
     save_html: bool = False,
     output_target: str | None = None,
     ai_enabled: bool | None = None,
+    require_ai_success: bool = False,
 ) -> dict[str, Any]:
     return _run_single_conversion(
         url=url,
@@ -158,6 +159,7 @@ def execute_single_conversion(
         save_html=save_html,
         output_target=output_target,
         ai_enabled=ai_enabled,
+        require_ai_success=require_ai_success,
         workspace_prefix="single",
     )
 
@@ -169,6 +171,7 @@ def _run_single_conversion(
     save_html: bool,
     output_target: str | None,
     ai_enabled: bool | None,
+    require_ai_success: bool = False,
     batch_workspace_root: Path | None = None,
     workspace_prefix: str = "single",
 ) -> dict[str, Any]:
@@ -214,6 +217,11 @@ def _run_single_conversion(
                     "template_applied": False,
                     "message": str(error),
                 }
+                if require_ai_success:
+                    raise RuntimeError(f"AI 润色失败：{error}") from error
+            if require_ai_success and not bool(ai_polish.get("template_applied")):
+                message = str(ai_polish.get("message") or "模板未成功应用")
+                raise RuntimeError(f"AI 润色失败：{message}")
         sync = sync_result_to_output(result, output_target=normalized_target)
         local_artifacts = {"retained": False, "workdir": None}
         if workspace is not None:
@@ -630,10 +638,26 @@ def process_telegram_convert_task(url: str, chat_id: str) -> None:
             timeout=settings.default_timeout,
             save_html=False,
             output_target="fns",
+            require_ai_success=True,
         )
     except Exception as error:
+        print(f"[telegram] conversion failed chat_id={chat_id}: {error}")
         send_telegram_message(chat_id, f"转换失败：{error}")
         return
+
+    ai_polish = payload.get("ai_polish") if isinstance(payload, dict) else {}
+    if isinstance(ai_polish, dict):
+        print(
+            "[telegram] ai result "
+            f"chat_id={chat_id} enabled={bool(ai_polish.get('enabled'))} "
+            f"status={ai_polish.get('status')} "
+            f"template_applied={bool(ai_polish.get('template_applied'))} "
+            f"content_polished={bool(ai_polish.get('content_polished'))}"
+        )
+    print(
+        "[telegram] conversion synced "
+        f"chat_id={chat_id} path={payload['sync'].get('path') or payload['sync'].get('markdown_file') or '-'}"
+    )
 
     if not settings.telegram_notify_on_complete:
         return
@@ -729,10 +753,26 @@ def process_feishu_convert_task(url: str, open_id: str) -> None:
             timeout=settings.default_timeout,
             save_html=False,
             output_target="fns",
+            require_ai_success=True,
         )
     except Exception as error:
+        print(f"[feishu] conversion failed open_id={open_id}: {error}")
         send_feishu_message(open_id, f"转换失败：{error}")
         return
+
+    ai_polish = payload.get("ai_polish") if isinstance(payload, dict) else {}
+    if isinstance(ai_polish, dict):
+        print(
+            "[feishu] ai result "
+            f"open_id={open_id} enabled={bool(ai_polish.get('enabled'))} "
+            f"status={ai_polish.get('status')} "
+            f"template_applied={bool(ai_polish.get('template_applied'))} "
+            f"content_polished={bool(ai_polish.get('content_polished'))}"
+        )
+    print(
+        "[feishu] conversion synced "
+        f"open_id={open_id} path={payload['sync'].get('path') or payload['sync'].get('markdown_file') or '-'}"
+    )
 
     if not settings.feishu_notify_on_complete:
         return

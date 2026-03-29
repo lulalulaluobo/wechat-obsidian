@@ -608,6 +608,54 @@ class ApiTests(unittest.TestCase):
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once()
 
+    def test_telegram_webhook_ignores_duplicate_message(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "success", "message": "registered", "webhook_url": "https://app.example.com/api/integrations/telegram/webhook"}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "obsidian",
+                    "telegram_enabled": True,
+                    "telegram_bot_token": "telegram-token",
+                    "telegram_webhook_public_base_url": "https://app.example.com",
+                    "telegram_webhook_secret": "secret-123",
+                    "telegram_allowed_chat_ids": "123456",
+                },
+            )
+
+        payload = {
+            "update_id": 9001,
+            "message": {
+                "message_id": 777,
+                "chat": {"id": 123456},
+                "text": "https://mp.weixin.qq.com/s/example",
+            },
+        }
+        with patch("builtins.print") as mocked_print:
+            with patch("app.api.routes.send_telegram_message") as mocked_send:
+                with patch("app.api.routes.submit_telegram_convert_task") as mocked_submit:
+                    first = self.client.post(
+                        "/api/integrations/telegram/webhook",
+                        headers={"X-Telegram-Bot-Api-Secret-Token": "secret-123"},
+                        json=payload,
+                    )
+                    second = self.client.post(
+                        "/api/integrations/telegram/webhook",
+                        headers={"X-Telegram-Bot-Api-Secret-Token": "secret-123"},
+                        json=payload,
+                    )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["status"], "accepted")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["status"], "ignored")
+        self.assertEqual(second.json()["reason"], "duplicate_message")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "123456")
+        mocked_print.assert_any_call("[bot] duplicate message ignored platform=telegram key=telegram:123456:777")
+
     def test_telegram_webhook_replies_error_for_multiple_links(self):
         self._login()
         with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "success", "message": "registered", "webhook_url": "https://app.example.com/api/integrations/telegram/webhook"}):
@@ -794,6 +842,53 @@ class ApiTests(unittest.TestCase):
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "ou_123")
 
+    def test_feishu_webhook_ignores_duplicate_message(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        payload = {
+            "schema": "2.0",
+            "header": {"event_type": "im.message.receive_v1", "event_id": "evt_1001"},
+            "event": {
+                "message": {
+                    "message_id": "om_1001",
+                    "message_type": "text",
+                    "chat_type": "p2p",
+                    "content": "{\"text\":\"https://mp.weixin.qq.com/s/example\"}",
+                },
+                "sender": {"sender_id": {"open_id": "ou_123"}},
+            },
+        }
+        with patch("builtins.print") as mocked_print:
+            with patch("app.api.routes.send_feishu_message") as mocked_send:
+                with patch("app.api.routes.submit_feishu_convert_task") as mocked_submit:
+                    first = self.client.post("/api/integrations/feishu/webhook", json=payload)
+                    second = self.client.post("/api/integrations/feishu/webhook", json=payload)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["status"], "accepted")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["status"], "ignored")
+        self.assertEqual(second.json()["reason"], "duplicate_message")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "ou_123")
+        mocked_print.assert_any_call("[bot] duplicate message ignored platform=feishu key=feishu:evt_1001")
+
     def test_feishu_webhook_accepts_single_link_when_whitelist_empty(self):
         self._login()
         with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
@@ -971,13 +1066,30 @@ class ApiTests(unittest.TestCase):
         }
 
         with patch("app.services.get_settings", return_value=settings):
-            with patch("app.services.execute_single_conversion", return_value=payload):
+            with patch("app.services.execute_single_conversion", return_value=payload) as mocked_execute:
                 with patch("app.services.send_telegram_message") as mocked_send:
                     process_telegram_convert_task("https://mp.weixin.qq.com/s/example", "123456")
 
         mocked_send.assert_called_once()
         message = mocked_send.call_args.args[1]
         self.assertIn("图片模式：S3 图床外链", message)
+        self.assertTrue(mocked_execute.call_args.kwargs["require_ai_success"])
+
+    def test_process_telegram_convert_task_reports_ai_failure_without_success_message(self):
+        settings = SimpleNamespace(
+            default_timeout=30,
+            telegram_notify_on_complete=True,
+            image_mode="s3_hotlink",
+        )
+
+        with patch("app.services.get_settings", return_value=settings):
+            with patch("app.services.execute_single_conversion", side_effect=RuntimeError("AI 润色失败：模板未成功应用")) as mocked_execute:
+                with patch("app.services.send_telegram_message") as mocked_send:
+                    process_telegram_convert_task("https://mp.weixin.qq.com/s/example", "123456")
+
+        mocked_send.assert_called_once()
+        self.assertIn("转换失败：AI 润色失败：模板未成功应用", mocked_send.call_args.args[1])
+        self.assertTrue(mocked_execute.call_args.kwargs["require_ai_success"])
 
     def test_process_feishu_convert_task_reports_s3_image_mode_when_payload_omits_it(self):
         settings = SimpleNamespace(
@@ -991,13 +1103,30 @@ class ApiTests(unittest.TestCase):
         }
 
         with patch("app.services.get_settings", return_value=settings):
-            with patch("app.services.execute_single_conversion", return_value=payload):
+            with patch("app.services.execute_single_conversion", return_value=payload) as mocked_execute:
                 with patch("app.services.send_feishu_message") as mocked_send:
                     process_feishu_convert_task("https://mp.weixin.qq.com/s/example", "ou_123")
 
         mocked_send.assert_called_once()
         message = mocked_send.call_args.args[1]
         self.assertIn("图片模式：S3 图床外链", message)
+        self.assertTrue(mocked_execute.call_args.kwargs["require_ai_success"])
+
+    def test_process_feishu_convert_task_reports_ai_failure_without_success_message(self):
+        settings = SimpleNamespace(
+            default_timeout=30,
+            feishu_notify_on_complete=True,
+            image_mode="s3_hotlink",
+        )
+
+        with patch("app.services.get_settings", return_value=settings):
+            with patch("app.services.execute_single_conversion", side_effect=RuntimeError("AI 润色失败：模板未成功应用")) as mocked_execute:
+                with patch("app.services.send_feishu_message") as mocked_send:
+                    process_feishu_convert_task("https://mp.weixin.qq.com/s/example", "ou_123")
+
+        mocked_send.assert_called_once()
+        self.assertIn("转换失败：AI 润色失败：模板未成功应用", mocked_send.call_args.args[1])
+        self.assertTrue(mocked_execute.call_args.kwargs["require_ai_success"])
 
     def test_settings_requires_login_redirect(self):
         response = self.client.get("/settings", follow_redirects=False)

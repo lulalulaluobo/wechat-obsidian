@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,48 @@ from app.services import (
 
 
 router = APIRouter()
+_BOT_EVENT_TTL_SECONDS = 10 * 60
+_bot_event_cache: dict[str, float] = {}
+_bot_event_lock = threading.Lock()
+
+
+def _remember_bot_event(key: str | None, platform: str) -> bool:
+    if not key:
+        return False
+    now = time.monotonic()
+    with _bot_event_lock:
+        expired = [event_key for event_key, expires_at in _bot_event_cache.items() if expires_at <= now]
+        for event_key in expired:
+            _bot_event_cache.pop(event_key, None)
+        if key in _bot_event_cache:
+            print(f"[bot] duplicate message ignored platform={platform} key={key}")
+            return True
+        _bot_event_cache[key] = now + _BOT_EVENT_TTL_SECONDS
+    return False
+
+
+def _build_telegram_event_key(payload: dict[str, Any], chat_id: str) -> str | None:
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+    message_id = str(message.get("message_id") or "").strip()
+    if message_id:
+        return f"telegram:{chat_id}:{message_id}"
+    update_id = str(payload.get("update_id") or "").strip()
+    if update_id:
+        return f"telegram:update:{update_id}"
+    return None
+
+
+def _build_feishu_event_key(payload: dict[str, Any], open_id: str) -> str | None:
+    header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    event_id = str(header.get("event_id") or "").strip()
+    if event_id:
+        return f"feishu:{event_id}"
+    message_id = str(message.get("message_id") or "").strip()
+    if message_id:
+        return f"feishu:{open_id}:{message_id}"
+    return None
 
 
 @router.get("/api/config")
@@ -337,6 +381,9 @@ async def telegram_webhook(
     chat_id = str(chat.get("id") or "").strip()
     if not chat_id or chat_id not in settings.telegram_allowed_chat_ids:
         return {"status": "ignored", "reason": "chat_not_allowed"}
+    event_key = _build_telegram_event_key(payload, chat_id)
+    if _remember_bot_event(event_key, "telegram"):
+        return {"status": "ignored", "reason": "duplicate_message"}
 
     text = str(message.get("text") or "").strip()
     url, url_count = extract_single_wechat_url(text)
@@ -385,8 +432,16 @@ async def feishu_webhook(
         return {"status": "ignored", "reason": "chat_type_not_supported"}
     if settings.feishu_allowed_open_ids and open_id not in settings.feishu_allowed_open_ids:
         return {"status": "ignored", "reason": "open_id_not_allowed"}
+    event_key = _build_feishu_event_key(payload, open_id)
+    if _remember_bot_event(event_key, "feishu"):
+        return {"status": "ignored", "reason": "duplicate_message"}
 
     url, url_count = extract_single_wechat_url(text)
+    print(
+        "[feishu] message parsed "
+        f"open_id={open_id} url_count={url_count} "
+        f"url_found={bool(url)} event_key={event_key or '-'}"
+    )
     if url_count == 0 or not url:
         _safe_send_feishu_message(open_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
         return {"status": "replied", "reason": "no_link"}
