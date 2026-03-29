@@ -37,6 +37,7 @@
       <button class="tab-btn active" data-tab="fns">FNS 同步</button>
       <button class="tab-btn" data-tab="image">图片模式</button>
       <button class="tab-btn" data-tab="telegram">Telegram Bot</button>
+      <button class="tab-btn" data-tab="feishu">飞书 Bot</button>
       <button class="tab-btn" data-tab="ai">AI 润色</button>
       <button class="tab-btn" data-tab="behavior">运行行为</button>
       <button class="tab-btn" data-tab="security">账号安全</button>
@@ -210,6 +211,69 @@
         </div>
 
         <div id="telegram-result-area"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Feishu -->
+    <div class="tab-panel" data-tab-panel="settings" data-tab-id="feishu">
+      <div class="card">
+        <h2 class="card-title">飞书 Bot</h2>
+        <p class="card-desc">通过飞书自建应用 Bot 的事件订阅触发单篇转换。第一版仅支持私聊和 open_id 白名单。</p>
+
+        <label class="check-row" style="margin-bottom:12px;">
+          <input id="feishu-enabled" type="checkbox">
+          启用飞书 Bot
+        </label>
+        <label class="check-row" style="margin-bottom:12px;">
+          <input id="feishu-notify-on-complete" type="checkbox">
+          转换完成后发送结果通知
+        </label>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="feishu-app-id">App ID</label>
+            <input id="feishu-app-id" placeholder="cli_xxx">
+            <div class="field-hint" id="hint-feishu-app-id"></div>
+          </div>
+          <div class="field">
+            <label for="feishu-app-secret">App Secret</label>
+            <input id="feishu-app-secret" type="password" placeholder="留空则保持不变">
+            <div class="field-hint text-muted" id="feishu-app-secret-meta"></div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="feishu-verification-token">Verification Token</label>
+            <input id="feishu-verification-token" type="password" placeholder="留空则保持不变">
+            <div class="field-hint text-muted" id="feishu-verification-token-meta"></div>
+          </div>
+          <div class="field">
+            <label for="feishu-encrypt-key">Encrypt Key</label>
+            <input id="feishu-encrypt-key" type="password" placeholder="留空则保持不变">
+            <div class="field-hint text-muted" id="feishu-encrypt-key-meta"></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="feishu-webhook-public-base-url">Webhook 对外基础地址</label>
+          <input id="feishu-webhook-public-base-url" placeholder="https://your-domain.example.com">
+          <div class="field-hint" id="hint-feishu-webhook-public-base-url"></div>
+        </div>
+
+        <div class="field">
+          <label for="feishu-allowed-open-ids">白名单 open_id</label>
+          <textarea id="feishu-allowed-open-ids" placeholder="每行一个 open_id，或逗号分隔" style="min-height:90px;"></textarea>
+          <div class="field-hint" id="hint-feishu-allowed-open-ids"></div>
+        </div>
+
+        <div class="action-row">
+          <button id="clear-feishu-app-secret" class="btn btn-danger">清空 App Secret</button>
+          <button id="clear-feishu-verification-token" class="btn btn-danger">清空 Verification Token</button>
+          <button id="clear-feishu-encrypt-key" class="btn btn-danger">清空 Encrypt Key</button>
+        </div>
+
+        <div id="feishu-result-area"></div>
       </div>
     </div>
 
@@ -651,6 +715,21 @@
       "telegram-webhook-secret": (v) => !document.getElementById("telegram-enabled").checked || v || document.getElementById("telegram-webhook-secret-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 Telegram 时需要 Webhook Secret" },
+      "feishu-app-id": (v) => !document.getElementById("feishu-enabled").checked || Boolean(v.trim())
+        ? { ok: true, text: "" }
+        : { ok: false, text: "启用飞书时请填写 App ID" },
+      "feishu-webhook-public-base-url": (v) => !document.getElementById("feishu-enabled").checked || /^https?:\/\//i.test(v)
+        ? { ok: true, text: "" }
+        : { ok: false, text: "必须以 http:// 或 https:// 开头" },
+      "feishu-allowed-open-ids": (v) => !document.getElementById("feishu-enabled").checked || Boolean(v.trim())
+        ? { ok: true, text: "" }
+        : { ok: false, text: "启用飞书时请填写白名单 open_id" },
+      "feishu-app-secret": (v) => !document.getElementById("feishu-enabled").checked || v || document.getElementById("feishu-app-secret-meta").textContent.includes("已配置")
+        ? { ok: true, text: "" }
+        : { ok: false, text: "启用飞书时需要 App Secret" },
+      "feishu-verification-token": (v) => !document.getElementById("feishu-enabled").checked || v || document.getElementById("feishu-verification-token-meta").textContent.includes("已配置")
+        ? { ok: true, text: "" }
+        : { ok: false, text: "启用飞书时需要 Verification Token" },
       "ai-context-template": (v) => !document.getElementById("ai-enabled").checked || Boolean(v.trim())
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 AI 时请填写解释器上下文模板" },
@@ -683,7 +762,7 @@
     Object.keys(validators).forEach((id) => {
       document.getElementById(id)?.addEventListener("input", validateAll);
     });
-    ["telegram-enabled", "ai-enabled", "ai-enable-content-polish"].forEach((id) => {
+    ["telegram-enabled", "feishu-enabled", "ai-enabled", "ai-enable-content-polish"].forEach((id) => {
       document.getElementById(id)?.addEventListener("change", validateAll);
     });
 
@@ -754,6 +833,30 @@
       document.getElementById("telegram-webhook-secret-meta").textContent = "保存时将清空 Webhook Secret";
       validateAll();
       AdminUI.toast("已标记清空 Telegram Webhook Secret", "warn");
+    });
+
+    document.getElementById("clear-feishu-app-secret").addEventListener("click", () => {
+      clearFields.add("feishu_app_secret");
+      document.getElementById("feishu-app-secret").value = "";
+      document.getElementById("feishu-app-secret-meta").textContent = "保存时将清空 App Secret";
+      validateAll();
+      AdminUI.toast("已标记清空飞书 App Secret", "warn");
+    });
+
+    document.getElementById("clear-feishu-verification-token").addEventListener("click", () => {
+      clearFields.add("feishu_verification_token");
+      document.getElementById("feishu-verification-token").value = "";
+      document.getElementById("feishu-verification-token-meta").textContent = "保存时将清空 Verification Token";
+      validateAll();
+      AdminUI.toast("已标记清空飞书 Verification Token", "warn");
+    });
+
+    document.getElementById("clear-feishu-encrypt-key").addEventListener("click", () => {
+      clearFields.add("feishu_encrypt_key");
+      document.getElementById("feishu-encrypt-key").value = "";
+      document.getElementById("feishu-encrypt-key-meta").textContent = "保存时将清空 Encrypt Key";
+      validateAll();
+      AdminUI.toast("已标记清空飞书 Encrypt Key", "warn");
     });
 
     document.getElementById("ai-provider-list").addEventListener("input", (event) => {
@@ -1084,6 +1187,11 @@
         telegram_notify_on_complete: document.getElementById("telegram-notify-on-complete").checked,
         telegram_webhook_public_base_url: document.getElementById("telegram-webhook-public-base-url").value.trim(),
         telegram_allowed_chat_ids: document.getElementById("telegram-allowed-chat-ids").value.trim(),
+        feishu_enabled: document.getElementById("feishu-enabled").checked,
+        feishu_notify_on_complete: document.getElementById("feishu-notify-on-complete").checked,
+        feishu_app_id: document.getElementById("feishu-app-id").value.trim(),
+        feishu_webhook_public_base_url: document.getElementById("feishu-webhook-public-base-url").value.trim(),
+        feishu_allowed_open_ids: document.getElementById("feishu-allowed-open-ids").value.trim(),
         ai_enabled: document.getElementById("ai-enabled").checked,
         ai_allow_body_polish: document.getElementById("ai-allow-body-polish").checked,
         ai_enable_content_polish: document.getElementById("ai-enable-content-polish").checked,
@@ -1116,10 +1224,16 @@
       const s3Secret = document.getElementById("s3-secret-key").value.trim();
       const telegramToken = document.getElementById("telegram-bot-token").value.trim();
       const telegramSecret = document.getElementById("telegram-webhook-secret").value.trim();
+      const feishuAppSecret = document.getElementById("feishu-app-secret").value.trim();
+      const feishuVerificationToken = document.getElementById("feishu-verification-token").value.trim();
+      const feishuEncryptKey = document.getElementById("feishu-encrypt-key").value.trim();
       if (fnsToken) payload.fns_token = fnsToken;
       if (s3Secret) payload.image_storage_secret_access_key = s3Secret;
       if (telegramToken) payload.telegram_bot_token = telegramToken;
       if (telegramSecret) payload.telegram_webhook_secret = telegramSecret;
+      if (feishuAppSecret) payload.feishu_app_secret = feishuAppSecret;
+      if (feishuVerificationToken) payload.feishu_verification_token = feishuVerificationToken;
+      if (feishuEncryptKey) payload.feishu_encrypt_key = feishuEncryptKey;
 
       try {
         const res = await fetch("/api/admin/settings", {
@@ -1150,6 +1264,18 @@
                 { label: "状态", value: data.telegram_webhook.status || "-" },
               ],
               json: data.telegram_webhook,
+            }));
+          }
+          if (data.feishu_webhook) {
+            AdminUI.setHtml("feishu-result-area", AdminUI.resultHtml({
+              title: "Webhook 状态",
+              tone: data.feishu_webhook.status === "ready" ? "success" : data.feishu_webhook.status === "inactive" ? "info" : "warn",
+              description: data.feishu_webhook.message || "飞书 Webhook 状态已更新",
+              items: [
+                { label: "Webhook 地址", value: data.feishu_webhook.webhook_url || "-" },
+                { label: "状态", value: data.feishu_webhook.status || "-" },
+              ],
+              json: data.feishu_webhook,
             }));
           }
           await loadSettings();
@@ -1225,6 +1351,20 @@
           ? `已配置：${data.telegram_bot_token_masked}` : "未配置";
         document.getElementById("telegram-webhook-secret-meta").textContent = data.telegram_webhook_secret_configured
           ? `已配置：${data.telegram_webhook_secret_masked}` : "未配置";
+        document.getElementById("feishu-enabled").checked = Boolean(data.feishu_enabled);
+        document.getElementById("feishu-notify-on-complete").checked = Boolean(data.feishu_notify_on_complete);
+        document.getElementById("feishu-app-id").value = data.feishu_app_id || "";
+        document.getElementById("feishu-app-secret").value = "";
+        document.getElementById("feishu-verification-token").value = "";
+        document.getElementById("feishu-encrypt-key").value = "";
+        document.getElementById("feishu-webhook-public-base-url").value = data.feishu_webhook_public_base_url || "";
+        document.getElementById("feishu-allowed-open-ids").value = data.feishu_allowed_open_ids_text || "";
+        document.getElementById("feishu-app-secret-meta").textContent = data.feishu_app_secret_configured
+          ? `已配置：${data.feishu_app_secret_masked}` : "未配置";
+        document.getElementById("feishu-verification-token-meta").textContent = data.feishu_verification_token_configured
+          ? `已配置：${data.feishu_verification_token_masked}` : "未配置";
+        document.getElementById("feishu-encrypt-key-meta").textContent = data.feishu_encrypt_key_configured
+          ? `已配置：${data.feishu_encrypt_key_masked}` : "未配置";
         document.getElementById("ai-enabled").checked = Boolean(data.ai_enabled);
         document.getElementById("ai-allow-body-polish").checked = Boolean(data.ai_allow_body_polish);
         document.getElementById("ai-enable-content-polish").checked = Boolean(data.ai_enable_content_polish);
@@ -1257,6 +1397,19 @@
           }));
         } else {
           AdminUI.setHtml("telegram-result-area", "");
+        }
+        if (data.feishu_enabled || data.feishu_webhook_status !== "inactive" || data.feishu_webhook_message) {
+          AdminUI.setHtml("feishu-result-area", AdminUI.resultHtml({
+            title: "Webhook 状态",
+            tone: data.feishu_webhook_status === "ready" ? "success" : data.feishu_webhook_status === "error" ? "error" : "info",
+            description: data.feishu_webhook_message || "尚未配置飞书 Webhook",
+            items: [
+              { label: "Webhook 地址", value: data.feishu_webhook_url || "-" },
+              { label: "状态", value: data.feishu_webhook_status || "inactive" },
+            ],
+          }));
+        } else {
+          AdminUI.setHtml("feishu-result-area", "");
         }
 
         AdminUI.setText("current-user", data.current_user?.username || "-");

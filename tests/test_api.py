@@ -17,7 +17,12 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.main import app  # noqa: E402
 from app.auth import build_session_token, reset_login_rate_limit_state  # noqa: E402
 from app.config import get_settings, reset_admin_credentials  # noqa: E402
-from app.services import extract_single_wechat_url, parse_links, process_telegram_convert_task  # noqa: E402
+from app.services import (  # noqa: E402
+    extract_single_wechat_url,
+    parse_links,
+    process_feishu_convert_task,
+    process_telegram_convert_task,
+)
 
 
 class ApiTests(unittest.TestCase):
@@ -402,6 +407,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("微信原链", text)
         self.assertIn("S3 图床外链", text)
         self.assertIn("Telegram Bot", text)
+        self.assertIn("飞书 Bot", text)
         self.assertIn("Bot Token", text)
         self.assertIn("Webhook 对外基础地址", text)
         self.assertIn("白名单 Chat ID", text)
@@ -446,6 +452,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(data["telegram_allowed_chat_ids_text"], "123456\n789000")
         self.assertNotIn("telegram-token-1", str(data))
         self.assertNotIn("telegram-secret-1", str(data))
+
+    def test_admin_settings_masks_feishu_secret_values(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "feishu-app-secret-1",
+                    "feishu_verification_token": "verify-token-1",
+                    "feishu_encrypt_key": "encrypt-key-1",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123\nou_456",
+                    "feishu_notify_on_complete": True,
+                },
+            )
+
+        response = self.client.get("/api/admin/settings")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["feishu_enabled"])
+        self.assertTrue(data["feishu_app_secret_configured"])
+        self.assertTrue(data["feishu_verification_token_configured"])
+        self.assertTrue(data["feishu_encrypt_key_configured"])
+        self.assertEqual(data["feishu_allowed_open_ids_text"], "ou_123\nou_456")
+        self.assertNotIn("feishu-app-secret-1", str(data))
+        self.assertNotIn("verify-token-1", str(data))
+        self.assertNotIn("encrypt-key-1", str(data))
 
     def test_admin_settings_put_updates_telegram_runtime_config_and_registers_webhook(self):
         self._login()
@@ -583,6 +619,175 @@ class ApiTests(unittest.TestCase):
         mocked_send.assert_called_once()
         mocked_submit.assert_not_called()
 
+    def test_feishu_webhook_accepts_url_verification(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                },
+            )
+
+        response = self.client.post(
+            "/api/integrations/feishu/webhook",
+            json={"type": "url_verification", "challenge": "challenge-123", "token": "verify-token"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["challenge"], "challenge-123")
+
+    def test_feishu_webhook_rejects_invalid_verification_token(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                },
+            )
+
+        response = self.client.post(
+            "/api/integrations/feishu/webhook",
+            json={"type": "url_verification", "challenge": "challenge-123", "token": "wrong-token"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_feishu_webhook_ignores_non_whitelist_open_id(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                },
+            )
+
+        with patch("app.api.routes.send_feishu_message") as mocked_send:
+            response = self.client.post(
+                "/api/integrations/feishu/webhook",
+                json={
+                    "schema": "2.0",
+                    "header": {"event_type": "im.message.receive_v1"},
+                    "event": {
+                        "message": {
+                            "message_type": "text",
+                            "chat_type": "p2p",
+                            "content": "{\"text\":\"https://mp.weixin.qq.com/s/example\"}",
+                        },
+                        "sender": {"sender_id": {"open_id": "ou_not_allowed"}},
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ignored")
+        mocked_send.assert_not_called()
+
+    def test_feishu_webhook_accepts_single_link_and_submits_background_task(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                    "feishu_notify_on_complete": True,
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        with patch("app.api.routes.send_feishu_message") as mocked_send:
+            with patch("app.api.routes.submit_feishu_convert_task") as mocked_submit:
+                response = self.client.post(
+                    "/api/integrations/feishu/webhook",
+                    json={
+                        "schema": "2.0",
+                        "header": {"event_type": "im.message.receive_v1"},
+                        "event": {
+                            "message": {
+                                "message_type": "text",
+                                "chat_type": "p2p",
+                                "content": "{\"text\":\"https://mp.weixin.qq.com/s/example\"}",
+                            },
+                            "sender": {"sender_id": {"open_id": "ou_123"}},
+                        },
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "accepted")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "ou_123")
+
+    def test_feishu_webhook_replies_error_for_multiple_links(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        with patch("app.api.routes.send_feishu_message") as mocked_send:
+            with patch("app.api.routes.submit_feishu_convert_task") as mocked_submit:
+                response = self.client.post(
+                    "/api/integrations/feishu/webhook",
+                    json={
+                        "schema": "2.0",
+                        "header": {"event_type": "im.message.receive_v1"},
+                        "event": {
+                            "message": {
+                                "message_type": "text",
+                                "chat_type": "p2p",
+                                "content": "{\"text\":\"https://mp.weixin.qq.com/s/one https://mp.weixin.qq.com/s/two\"}",
+                            },
+                            "sender": {"sender_id": {"open_id": "ou_123"}},
+                        },
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "replied")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_not_called()
+
     def test_process_telegram_convert_task_reports_s3_image_mode_when_payload_omits_it(self):
         settings = SimpleNamespace(
             default_timeout=30,
@@ -598,6 +803,26 @@ class ApiTests(unittest.TestCase):
             with patch("app.services.execute_single_conversion", return_value=payload):
                 with patch("app.services.send_telegram_message") as mocked_send:
                     process_telegram_convert_task("https://mp.weixin.qq.com/s/example", "123456")
+
+        mocked_send.assert_called_once()
+        message = mocked_send.call_args.args[1]
+        self.assertIn("图片模式：S3 图床外链", message)
+
+    def test_process_feishu_convert_task_reports_s3_image_mode_when_payload_omits_it(self):
+        settings = SimpleNamespace(
+            default_timeout=30,
+            feishu_notify_on_complete=True,
+            image_mode="s3_hotlink",
+        )
+        payload = {
+            "result": {"title": "标题"},
+            "sync": {"path": "00_Inbox/微信公众号/标题.md"},
+        }
+
+        with patch("app.services.get_settings", return_value=settings):
+            with patch("app.services.execute_single_conversion", return_value=payload):
+                with patch("app.services.send_feishu_message") as mocked_send:
+                    process_feishu_convert_task("https://mp.weixin.qq.com/s/example", "ou_123")
 
         mocked_send.assert_called_once()
         message = mocked_send.call_args.args[1]

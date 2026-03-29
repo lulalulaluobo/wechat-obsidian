@@ -15,12 +15,13 @@ import requests
 
 from app.ai_adapters import extract_completion_preview, request_ai_completion, validate_provider_model
 from app.ai_polish import apply_ai_polish_to_markdown
-from app.config import get_settings, update_telegram_webhook_state
+from app.config import get_settings, update_feishu_webhook_state, update_telegram_webhook_state
 from app.core.pipeline import run_pipeline, sanitize_filename
 
 
 URL_PATTERN = re.compile(r"https?://mp\.weixin\.qq\.com/s(?:[/?][^\s)>]+)?", re.IGNORECASE)
 TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
+FEISHU_TENANT_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 
 
 def get_internal_workdir_root() -> Path:
@@ -298,6 +299,8 @@ def build_config_payload() -> dict[str, Any]:
         "image_public_base_url": settings.image_storage_public_base_url,
         "image_storage_bucket": settings.image_storage_bucket,
         "image_storage_path_template": settings.image_storage_path_template,
+        "feishu_enabled": settings.feishu_enabled,
+        "feishu_webhook_status": settings.feishu_webhook_status,
         "ai_enabled": settings.ai_enabled,
         "ai_configured": settings.ai_configured,
         "ai_model": settings.ai_model,
@@ -656,6 +659,99 @@ def process_telegram_convert_task(url: str, chat_id: str) -> None:
     )
 
 
+def send_feishu_message(open_id: str, text: str, http_session=None) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.feishu_app_id or not settings.feishu_app_secret:
+        raise RuntimeError("飞书 App ID / App Secret 未配置")
+    session = http_session or requests.Session()
+    tenant_access_token = get_feishu_tenant_access_token(http_session=session)
+    response = session.post(
+        "https://open.feishu.cn/open-apis/im/v1/messages",
+        params={"receive_id_type": "open_id"},
+        headers={
+            "Authorization": f"Bearer {tenant_access_token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        json={
+            "receive_id": open_id,
+            "msg_type": "text",
+            "content": json.dumps({"text": text}, ensure_ascii=False),
+        },
+        timeout=max(settings.default_timeout, 15),
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_feishu_tenant_access_token(http_session=None) -> str:
+    settings = get_settings()
+    if not settings.feishu_app_id or not settings.feishu_app_secret:
+        raise RuntimeError("飞书 App ID / App Secret 未配置")
+    cache_key = f"{settings.feishu_app_id}:{settings.feishu_app_secret}"
+    now = time.time()
+    cached = _feishu_token_cache.get(cache_key)
+    if cached and cached["expires_at"] > now + 30:
+        return str(cached["token"])
+
+    session = http_session or requests.Session()
+    response = session.post(
+        FEISHU_TENANT_TOKEN_URL,
+        json={"app_id": settings.feishu_app_id, "app_secret": settings.feishu_app_secret},
+        timeout=max(settings.default_timeout, 15),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if int(payload.get("code", 0)) != 0:
+        raise RuntimeError(str(payload.get("msg") or "飞书 tenant_access_token 获取失败"))
+    token = str(payload.get("tenant_access_token") or "").strip()
+    if not token:
+        raise RuntimeError("飞书 tenant_access_token 响应缺少 token")
+    expire = int(payload.get("expire", 7200) or 7200)
+    _feishu_token_cache[cache_key] = {"token": token, "expires_at": now + max(expire - 60, 60)}
+    return token
+
+
+def submit_feishu_convert_task(url: str, open_id: str) -> None:
+    _feishu_executor.submit(process_feishu_convert_task, url, open_id)
+
+
+def process_feishu_convert_task(url: str, open_id: str) -> None:
+    settings = get_settings()
+    try:
+        payload = execute_single_conversion(
+            url=url,
+            timeout=settings.default_timeout,
+            save_html=False,
+            output_target="fns",
+        )
+    except Exception as error:
+        send_feishu_message(open_id, f"转换失败：{error}")
+        return
+
+    if not settings.feishu_notify_on_complete:
+        return
+
+    title = str(payload["result"].get("title") or "转换完成")
+    sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
+    resolved_image_mode = str(
+        payload["result"].get("image_mode")
+        or payload.get("image_mode")
+        or settings.image_mode
+        or ""
+    )
+    image_mode = "S3 图床外链" if resolved_image_mode == "s3_hotlink" else "微信原链"
+    send_feishu_message(
+        open_id,
+        "\n".join(
+            [
+                f"转换完成：{title}",
+                f"同步路径：{sync_path}",
+                f"图片模式：{image_mode}",
+            ]
+        ),
+    )
+
+
 def extract_single_wechat_url(text: str) -> tuple[str | None, int]:
     links = URL_PATTERN.findall(text or "")
     if not links:
@@ -668,6 +764,49 @@ def extract_single_wechat_url(text: str) -> tuple[str | None, int]:
         seen.add(item)
         unique_links.append(item)
     return unique_links[0], len(unique_links)
+
+
+def configure_feishu_webhook_state() -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.feishu_enabled:
+        state = {"status": "inactive", "message": "飞书 Bot 未启用", "webhook_url": settings.feishu_webhook_url or ""}
+        update_feishu_webhook_state(state["status"], state["message"], webhook_url=state["webhook_url"])
+        return state
+    if not settings.feishu_enabled_and_configured or not settings.feishu_webhook_url:
+        state = {"status": "error", "message": "飞书 Bot 配置不完整", "webhook_url": settings.feishu_webhook_url or ""}
+        update_feishu_webhook_state(state["status"], state["message"], webhook_url=state["webhook_url"])
+        return state
+    state = {"status": "ready", "message": "请在飞书开放平台事件订阅中填写该 Webhook 地址", "webhook_url": settings.feishu_webhook_url}
+    update_feishu_webhook_state(state["status"], state["message"], webhook_url=state["webhook_url"])
+    return state
+
+
+def extract_feishu_message_text(payload: dict[str, Any]) -> tuple[str, str | None, str | None]:
+    if str(payload.get("type") or "") == "url_verification":
+        return "", None, None
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
+    if str(header.get("event_type") or "") != "im.message.receive_v1":
+        return "", None, None
+
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    sender = event.get("sender") if isinstance(event.get("sender"), dict) else {}
+    sender_id = sender.get("sender_id") if isinstance(sender.get("sender_id"), dict) else {}
+    open_id = str(sender_id.get("open_id") or "").strip() or None
+    chat_type = str(message.get("chat_type") or "").strip() or None
+    if str(message.get("message_type") or "").strip() != "text":
+        return "", open_id, chat_type
+    content_raw = message.get("content")
+    if isinstance(content_raw, str):
+        try:
+            content_obj = json.loads(content_raw)
+        except ValueError:
+            content_obj = {}
+        if isinstance(content_obj, dict):
+            return str(content_obj.get("text") or "").strip(), open_id, chat_type
+    if isinstance(content_raw, dict):
+        return str(content_raw.get("text") or "").strip(), open_id, chat_type
+    return "", open_id, chat_type
 
 
 def _telegram_api_url(token: str, method: str) -> str:
@@ -707,3 +846,5 @@ def _copy_job(job: dict[str, Any]) -> dict[str, Any]:
 
 job_store = JobStore()
 _telegram_executor = ThreadPoolExecutor(max_workers=2)
+_feishu_executor = ThreadPoolExecutor(max_workers=2)
+_feishu_token_cache: dict[str, dict[str, Any]] = {}

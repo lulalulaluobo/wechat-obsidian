@@ -20,6 +20,7 @@ from app.config import (
     get_settings,
     save_runtime_config,
     update_ai_selected_model,
+    update_feishu_webhook_state,
     update_password,
     update_telegram_webhook_state,
 )
@@ -27,8 +28,10 @@ from app.services import (
     build_config_payload,
     build_output_target,
     check_fns_status,
+    configure_feishu_webhook_state,
     configure_telegram_webhook,
     execute_single_conversion,
+    extract_feishu_message_text,
     extract_single_wechat_url,
     ensure_runtime_environment,
     get_internal_workdir_root,
@@ -36,7 +39,9 @@ from app.services import (
     normalize_output_dir,
     parse_links,
     read_uploaded_text,
+    send_feishu_message,
     send_telegram_message,
+    submit_feishu_convert_task,
     submit_telegram_convert_task,
     test_ai_connectivity,
     TELEGRAM_SECRET_HEADER,
@@ -256,11 +261,18 @@ async def update_admin_settings(
     try:
         save_runtime_config(payload, clear_fields=clear_fields)
         webhook_state = configure_telegram_webhook()
+        feishu_webhook_state = configure_feishu_webhook_state()
         if isinstance(webhook_state, dict):
             update_telegram_webhook_state(
                 str(webhook_state.get("status") or "inactive"),
                 str(webhook_state.get("message") or ""),
                 webhook_url=str(webhook_state.get("webhook_url") or ""),
+            )
+        if isinstance(feishu_webhook_state, dict):
+            update_feishu_webhook_state(
+                str(feishu_webhook_state.get("status") or "inactive"),
+                str(feishu_webhook_state.get("message") or ""),
+                webhook_url=str(feishu_webhook_state.get("webhook_url") or ""),
             )
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -269,6 +281,7 @@ async def update_admin_settings(
         "status": "success",
         "settings": build_admin_settings_payload(),
         "telegram_webhook": webhook_state,
+        "feishu_webhook": feishu_webhook_state,
     }
 
 
@@ -339,6 +352,49 @@ async def telegram_webhook(
 
     send_telegram_message(chat_id, "已接收，开始转换。")
     submit_telegram_convert_task(url, chat_id)
+    return {"status": "accepted"}
+
+
+@router.post("/api/integrations/feishu/webhook")
+async def feishu_webhook(
+    request: Request,
+) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.feishu_enabled:
+        return {"status": "ignored", "reason": "feishu_disabled"}
+
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="飞书 webhook payload 无效")
+
+    event_type = str(payload.get("type") or "").strip()
+    if event_type == "url_verification":
+        token = str(payload.get("token") or "").strip()
+        if not settings.feishu_verification_token or token != settings.feishu_verification_token:
+            raise HTTPException(status_code=403, detail="飞书 verification token 无效")
+        return {"challenge": str(payload.get("challenge") or "")}
+
+    text, open_id, chat_type = extract_feishu_message_text(payload)
+    if not open_id:
+        return {"status": "ignored", "reason": "missing_open_id"}
+    if chat_type != "p2p":
+        return {"status": "ignored", "reason": "chat_type_not_supported"}
+    if open_id not in settings.feishu_allowed_open_ids:
+        return {"status": "ignored", "reason": "open_id_not_allowed"}
+
+    url, url_count = extract_single_wechat_url(text)
+    if url_count == 0 or not url:
+        send_feishu_message(open_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
+        return {"status": "replied", "reason": "no_link"}
+    if url_count > 1:
+        send_feishu_message(open_id, "一次只支持一篇文章，请只发送一条微信文章链接。")
+        return {"status": "replied", "reason": "multiple_links"}
+    if not settings.fns_enabled:
+        send_feishu_message(open_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
+        return {"status": "replied", "reason": "fns_not_configured"}
+
+    send_feishu_message(open_id, "已接收，开始转换。")
+    submit_feishu_convert_task(url, open_id)
     return {"status": "accepted"}
 
 
