@@ -261,6 +261,7 @@
         });
         const data = await res.json();
         if (res.ok) {
+          document.getElementById("single-url").value = "";
           AdminUI.toast("转换成功", "success");
           AdminUI.setHtml("single-result-area", AdminUI.resultHtml({
             title: data.result?.title || "转换完成",
@@ -337,6 +338,8 @@
         const res = await fetch("/api/batch", { method: "POST", body: formData });
         const data = await res.json();
         if (res.ok && data.job_id) {
+          document.getElementById("batch-urls").value = "";
+          fileInput.value = "";
           AdminUI.toast(`批量任务已创建: ${data.total} 篇`, "success");
           AdminUI.setHtml("batch-result-area", AdminUI.resultHtml({
             title: "任务已创建", tone: "info",

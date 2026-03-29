@@ -189,6 +189,7 @@ def _run_single_conversion(
             save_html=save_html,
             timeout=normalized_timeout,
         )
+        result.setdefault("image_mode", settings.image_mode)
         ai_polish = {
             "enabled": normalized_ai_enabled,
             "status": "skipped",
@@ -645,7 +646,13 @@ def process_telegram_convert_task(url: str, chat_id: str) -> None:
 
     title = str(payload["result"].get("title") or "转换完成")
     sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
-    image_mode = "S3 图床外链" if str(payload["result"].get("image_mode") or "") == "s3_hotlink" else "微信原链"
+    resolved_image_mode = str(
+        payload["result"].get("image_mode")
+        or payload.get("image_mode")
+        or settings.image_mode
+        or ""
+    )
+    image_mode = "S3 图床外链" if resolved_image_mode == "s3_hotlink" else "微信原链"
     send_telegram_message(
         chat_id,
         "\n".join(

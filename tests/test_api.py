@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -16,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.main import app  # noqa: E402
 from app.auth import build_session_token, reset_login_rate_limit_state  # noqa: E402
 from app.config import get_settings, reset_admin_credentials  # noqa: E402
-from app.services import extract_single_wechat_url, parse_links  # noqa: E402
+from app.services import extract_single_wechat_url, parse_links, process_telegram_convert_task  # noqa: E402
 
 
 class ApiTests(unittest.TestCase):
@@ -88,6 +89,9 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn("输出目录", response.text)
         self.assertNotIn("输出目标", response.text)
         self.assertNotIn("写入本地目录", response.text)
+        self.assertIn('document.getElementById("single-url").value = "";', response.text)
+        self.assertIn('document.getElementById("batch-urls").value = "";', response.text)
+        self.assertIn('fileInput.value = "";', response.text)
 
     def test_wrong_password_is_rejected(self):
         response = self._login(password="wrong-password")
@@ -393,6 +397,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn('id="fns-status-result"', text)
         self.assertIn("当前登录用户", text)
         self.assertIn("修改密码", text)
+        self.assertIn('id="change-pw-btn" class="btn btn-danger"', text)
         self.assertIn("图片外链设置", text)
         self.assertIn("微信原链", text)
         self.assertIn("S3 图床外链", text)
@@ -407,6 +412,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("body 模板", text)
         self.assertIn("测试 AI 连通性", text)
         self.assertIn("导入 Clipper JSON 模板", text)
+        self.assertIn('id="clipper-json-file"', text)
+        self.assertNotIn('id="paste-clipper-btn"', text)
 
     def test_admin_settings_masks_telegram_secret_values(self):
         self._login()
@@ -569,6 +576,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "replied")
         mocked_send.assert_called_once()
         mocked_submit.assert_not_called()
+
+    def test_process_telegram_convert_task_reports_s3_image_mode_when_payload_omits_it(self):
+        settings = SimpleNamespace(
+            default_timeout=30,
+            telegram_notify_on_complete=True,
+            image_mode="s3_hotlink",
+        )
+        payload = {
+            "result": {"title": "标题"},
+            "sync": {"path": "00_Inbox/微信公众号/标题.md"},
+        }
+
+        with patch("app.services.get_settings", return_value=settings):
+            with patch("app.services.execute_single_conversion", return_value=payload):
+                with patch("app.services.send_telegram_message") as mocked_send:
+                    process_telegram_convert_task("https://mp.weixin.qq.com/s/example", "123456")
+
+        mocked_send.assert_called_once()
+        message = mocked_send.call_args.args[1]
+        self.assertIn("图片模式：S3 图床外链", message)
 
     def test_settings_requires_login_redirect(self):
         response = self.client.get("/settings", follow_redirects=False)

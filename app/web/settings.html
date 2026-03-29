@@ -286,13 +286,17 @@
         <div class="sep"></div>
 
         <h3 class="card-title" style="font-size:18px;">导入 Clipper JSON 模板</h3>
-        <p class="card-desc">粘贴 Obsidian Web Clipper 模板 JSON，自动映射为当前系统的 frontmatter、body 和解释器模板。</p>
+        <p class="card-desc">直接导入 Obsidian Web Clipper 导出的 JSON 文件，自动映射为当前系统的 frontmatter、body 和解释器模板。</p>
         <div class="field">
-          <label for="clipper-json-input">Clipper JSON</label>
+          <label for="clipper-json-file">Clipper JSON 文件</label>
+          <input id="clipper-json-file" type="file" accept=".json,application/json">
+          <div class="field-hint">选择导出的模板 JSON 文件后会自动读取并填充，下方文本区可继续微调。</div>
+        </div>
+        <div class="field">
+          <label for="clipper-json-input">Clipper JSON 内容</label>
           <textarea id="clipper-json-input" style="min-height:180px;" placeholder='{"schemaVersion":"0.1.0","properties":[...],"noteContentFormat":"..."}'></textarea>
         </div>
         <div class="action-row">
-          <button id="paste-clipper-btn" class="btn btn-secondary">从剪贴板导入</button>
           <button id="parse-clipper-btn" class="btn btn-ghost">解析并填充</button>
         </div>
       </div>
@@ -328,7 +332,7 @@
           </div>
         </div>
         <div class="action-row">
-          <button id="change-pw-btn" class="btn btn-secondary">修改密码</button>
+          <button id="change-pw-btn" class="btn btn-danger">修改密码</button>
         </div>
         <div id="pw-result-area"></div>
       </div>
@@ -660,13 +664,17 @@
       AdminUI.toast("Clipper 模板已映射到当前 AI 配置，请确认后保存", "success");
     }
 
-    document.getElementById("paste-clipper-btn").addEventListener("click", async () => {
+    document.getElementById("clipper-json-file").addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
       try {
-        const text = await navigator.clipboard.readText();
+        const text = await file.text();
         document.getElementById("clipper-json-input").value = text;
         applyClipperTemplateImport(parseClipperTemplate(text));
       } catch (err) {
-        AdminUI.toast(err?.message || "剪贴板读取失败，请手动粘贴", "error");
+        AdminUI.toast(err?.message || "读取 Clipper JSON 文件失败", "error");
       }
     });
 
