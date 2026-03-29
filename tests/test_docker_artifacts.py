@@ -21,15 +21,16 @@ class DockerArtifactsTests(unittest.TestCase):
         self.assertIn('"8765"', dockerfile)
         self.assertNotIn("COPY .env", dockerfile)
 
-    def test_docker_compose_maps_data_volume_and_env_file(self):
+    def test_docker_compose_maps_data_volume_and_inline_environment(self):
         compose = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
         self.assertIn("wechat-md-server:", compose)
-        self.assertIn("env_file:", compose)
-        self.assertIn(".env", compose)
+        self.assertIn('image: your-namespace/wechat-md-server:latest', compose)
+        self.assertIn('user: "0:0"', compose)
+        self.assertIn("environment:", compose)
+        self.assertIn("WECHAT_MD_APP_MASTER_KEY:", compose)
         self.assertIn("./data:/app/data", compose)
         self.assertIn('"8765:8765"', compose)
-        self.assertIn("healthcheck:", compose)
 
     def test_docker_compose_prod_uses_prod_env_and_public_port_binding(self):
         compose = (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")

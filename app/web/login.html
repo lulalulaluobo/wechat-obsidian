@@ -20,11 +20,11 @@
 
       <div class="field">
         <label for="username">用户名</label>
-        <input id="username" autocomplete="username" placeholder="admin">
+        <input id="username" name="wechat-md-username" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="admin">
       </div>
       <div class="field">
         <label for="password">密码</label>
-        <input id="password" type="password" autocomplete="current-password" placeholder="输入管理员密码">
+        <input id="password" name="wechat-md-password" type="password" autocomplete="new-password" placeholder="输入管理员密码">
       </div>
 
       <div class="action-row" style="margin-top:20px;">
@@ -37,6 +37,20 @@
 
   <script src="/assets/admin.js"></script>
   <script>
+    const usernameInput = document.getElementById("username");
+    const passwordInput = document.getElementById("password");
+
+    function resetLoginFields() {
+      passwordInput.value = "";
+      passwordInput.setAttribute("value", "");
+    }
+
+    window.addEventListener("pageshow", resetLoginFields);
+    window.addEventListener("load", () => {
+      resetLoginFields();
+      usernameInput.focus();
+    });
+
     document.getElementById("login-submit").addEventListener("click", async () => {
       const btn = document.getElementById("login-submit");
       btn.disabled = true;
@@ -47,8 +61,8 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            username: document.getElementById("username").value.trim(),
-            password: document.getElementById("password").value,
+            username: usernameInput.value.trim(),
+            password: passwordInput.value,
           }),
         });
         const data = await response.json();
@@ -78,7 +92,7 @@
     });
 
     // Enter key to submit
-    document.getElementById("password").addEventListener("keydown", (e) => {
+    passwordInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") document.getElementById("login-submit").click();
     });
   </script>
