@@ -141,8 +141,10 @@ class AIPolishTests(unittest.TestCase):
             return_value={
                 "summary": "一句话总结",
                 "tags": ["AI", "微信"],
-                "content_polished": "## 润色后正文\n\n- 更适合 Obsidian 阅读",
             },
+        ), patch(
+            "app.ai_polish.request_polished_content",
+            return_value="## 润色后正文\n\n- 更适合 Obsidian 阅读",
         ):
             apply_ai_polish_to_markdown(
                 markdown_path=markdown_path,
@@ -173,8 +175,10 @@ class AIPolishTests(unittest.TestCase):
             "app.ai_polish.request_interpreter_variables",
             return_value={
                 "summary": "一句话总结",
-                "content_polished": "## 润色后正文\n\n- 更适合 Obsidian 阅读",
             },
+        ), patch(
+            "app.ai_polish.request_polished_content",
+            return_value="## 润色后正文\n\n- 更适合 Obsidian 阅读",
         ):
             apply_ai_polish_to_markdown(
                 markdown_path=markdown_path,
@@ -196,6 +200,45 @@ class AIPolishTests(unittest.TestCase):
         self.assertIn("## 润色后正文", text)
         self.assertNotIn("原始正文内容", text)
         self.assertIn("后置块", text)
+
+    def test_apply_ai_polish_keeps_frontmatter_when_content_polish_request_fails(self):
+        markdown_path = Path(self.temp_dir.name) / "degraded-polish.md"
+        markdown_path.write_text("# 原文标题\n\n原始正文内容", encoding="utf-8")
+        metadata = {"title": "示例标题", "author": "作者", "url": "https://mp.weixin.qq.com/s/example"}
+
+        with patch(
+            "app.ai_polish.request_interpreter_variables",
+            return_value={
+                "summary": "一句话总结",
+                "tags": ["AI", "微信"],
+            },
+        ), patch(
+            "app.ai_polish.request_polished_content",
+            side_effect=RuntimeError("content polish failed"),
+        ):
+            ai_result = apply_ai_polish_to_markdown(
+                markdown_path=markdown_path,
+                metadata=metadata,
+                ai_base_url="https://api.example.com/v1",
+                ai_api_key="ai-key",
+                ai_model="gpt-5.4-mini",
+                interpreter_prompt='{"summary":"一句话总结","tags":"生成 5 个标签"}',
+                frontmatter_template="---\ntitle: {{title}}\nsummary: {{summary}}\ntags: {{tags}}\n---",
+                body_template="{{content}}",
+                context_template="{{content}}",
+                allow_body_polish=False,
+                enable_content_polish=True,
+                content_polish_prompt="请把正文整理为更适合 Obsidian 阅读的 Markdown",
+            )
+
+        text = markdown_path.read_text(encoding="utf-8")
+        self.assertEqual(ai_result["status"], "success")
+        self.assertTrue(ai_result["template_applied"])
+        self.assertFalse(ai_result["content_polished"])
+        self.assertIn("正文润色已降级", ai_result["message"])
+        self.assertIn("summary: 一句话总结", text)
+        self.assertIn('tags: ["AI", "微信"]', text)
+        self.assertIn("原始正文内容", text)
 
     def test_build_prompt_from_variable_prompts_includes_context_and_keys(self):
         prompt = build_prompt_from_variable_prompts(

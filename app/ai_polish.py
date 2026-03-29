@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from app.ai_adapters import extract_completion_preview, extract_completion_text, request_ai_completion, validate_provider_model
+
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
 PROMPT_PLACEHOLDER_PATTERN = re.compile(r'{{\s*"([^"]+)"\s*}}')
@@ -29,50 +31,115 @@ def render_template(template: str, variables: dict[str, Any], *, list_format: st
 
 def request_interpreter_variables(
     *,
-    ai_base_url: str,
-    ai_api_key: str,
-    ai_model: str,
+    provider: dict[str, Any] | None = None,
+    model: dict[str, Any] | None = None,
+    ai_base_url: str | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
     prompt: str,
     http_session=None,
     timeout: int = 60,
 ) -> dict[str, Any]:
-    session = http_session or requests.Session()
-    response = session.post(
-        f"{ai_base_url.rstrip('/')}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {ai_api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": ai_model,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": "你是一个结构化笔记解释器，只返回 JSON 对象。"},
-                {"role": "user", "content": prompt},
-            ],
-        },
+    resolved_provider = provider or {
+        "id": "legacy-openai-compatible",
+        "type": "openai_compatible",
+        "display_name": "OpenAI Compatible",
+        "base_url": str(ai_base_url or "").strip(),
+        "api_key": str(ai_api_key or "").strip(),
+        "enabled": True,
+        "built_in": False,
+    }
+    resolved_model = model or {
+        "id": "legacy-model",
+        "provider_id": str(resolved_provider.get("id") or "legacy-openai-compatible"),
+        "display_name": str(ai_model or "").strip(),
+        "model_id": str(ai_model or "").strip(),
+        "enabled": True,
+    }
+    validate_provider_model(resolved_provider, resolved_model)
+    payload = request_ai_completion(
+        provider=resolved_provider,
+        model=resolved_model,
+        messages=[
+            {"role": "system", "content": "你是一个结构化笔记解释器，只返回 JSON 对象。"},
+            {"role": "user", "content": prompt},
+        ],
         timeout=timeout,
+        http_session=http_session,
+        temperature=0.2,
     )
-    response.raise_for_status()
-    payload = response.json()
-    choices = payload.get("choices") if isinstance(payload, dict) else None
-    if not isinstance(choices, list) or not choices:
-        raise RuntimeError("AI 返回缺少 choices")
-    message = choices[0].get("message") if isinstance(choices[0], dict) else None
-    if not isinstance(message, dict):
-        raise RuntimeError("AI 返回缺少 message")
-    content = message.get("content")
-    if isinstance(content, list):
-        content_text = "".join(
-            str(item.get("text") or "")
-            for item in content
-            if isinstance(item, dict)
-        ).strip()
-    else:
-        content_text = str(content or "").strip()
+    content_text = extract_completion_preview(payload, provider_type=str(resolved_provider.get("type") or "openai_compatible"))
     if not content_text:
         raise RuntimeError("AI 返回内容为空")
     return _parse_json_response(content_text)
+
+
+def request_polished_content(
+    *,
+    provider: dict[str, Any] | None = None,
+    model: dict[str, Any] | None = None,
+    ai_base_url: str | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
+    metadata: dict[str, Any],
+    context: str,
+    polish_prompt: str,
+    http_session=None,
+    timeout: int = 60,
+) -> str:
+    resolved_provider = provider or {
+        "id": "legacy-openai-compatible",
+        "type": "openai_compatible",
+        "display_name": "OpenAI Compatible",
+        "base_url": str(ai_base_url or "").strip(),
+        "api_key": str(ai_api_key or "").strip(),
+        "enabled": True,
+        "built_in": False,
+    }
+    resolved_model = model or {
+        "id": "legacy-model",
+        "provider_id": str(resolved_provider.get("id") or "legacy-openai-compatible"),
+        "display_name": str(ai_model or "").strip(),
+        "model_id": str(ai_model or "").strip(),
+        "enabled": True,
+    }
+    validate_provider_model(resolved_provider, resolved_model)
+    prompt = "\n".join(
+        [
+            "请根据以下元数据和正文，输出润色后的 Obsidian Markdown 正文。",
+            "只返回正文 Markdown，不要返回 JSON，不要额外解释。",
+            "",
+            "元数据：",
+            f"- title: {metadata.get('title') or ''}",
+            f"- author: {metadata.get('author') or ''}",
+            f"- url: {metadata.get('url') or ''}",
+            f"- date: {metadata.get('date') or ''}",
+            "",
+            "润色要求：",
+            str(polish_prompt or "").strip(),
+            "",
+            "正文：",
+            context.strip(),
+        ]
+    ).strip()
+    payload = request_ai_completion(
+        provider=resolved_provider,
+        model=resolved_model,
+        messages=[
+            {"role": "system", "content": "你是一个 Obsidian Markdown 润色助手，只返回正文 Markdown。"},
+            {"role": "user", "content": prompt},
+        ],
+        timeout=timeout,
+        http_session=http_session,
+        temperature=0.2,
+    )
+    content_text = extract_completion_text(payload, provider_type=str(resolved_provider.get("type") or "openai_compatible")).strip()
+    if not content_text:
+        raise RuntimeError("AI 返回内容为空")
+    if content_text.startswith("```"):
+        content_text = re.sub(r"^```(?:markdown|md|text)?\s*", "", content_text, flags=re.IGNORECASE)
+        content_text = re.sub(r"\s*```$", "", content_text)
+    return content_text.strip()
 
 
 def build_prompt_from_variable_prompts(
@@ -147,9 +214,11 @@ def apply_ai_polish_to_markdown(
     *,
     markdown_path: Path,
     metadata: dict[str, Any],
-    ai_base_url: str,
-    ai_api_key: str,
-    ai_model: str,
+    provider: dict[str, Any] | None = None,
+    model: dict[str, Any] | None = None,
+    ai_base_url: str | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
     interpreter_prompt: str,
     frontmatter_template: str,
     body_template: str,
@@ -176,8 +245,6 @@ def apply_ai_polish_to_markdown(
         "my_understand": "",
         "body_polish": "",
         "content_polished": "",
-        "content_polish_prompt_enabled": bool(enable_content_polish),
-        "content_polish_prompt": str(content_polish_prompt or "").strip(),
     }
     rendered_context = render_template(context_template, base_variables).strip() or base_variables["content"]
     prompt = _build_interpreter_prompt(
@@ -187,6 +254,8 @@ def apply_ai_polish_to_markdown(
         context=rendered_context,
     )
     interpreted = request_interpreter_variables(
+        provider=provider,
+        model=model,
         ai_base_url=ai_base_url,
         ai_api_key=ai_api_key,
         ai_model=ai_model,
@@ -195,7 +264,24 @@ def apply_ai_polish_to_markdown(
         timeout=timeout,
     )
     normalized = _normalize_interpreted_variables(interpreted, allow_body_polish=allow_body_polish)
-    polished_content = str(normalized.get("content_polished") or "").strip()
+    polished_content = ""
+    content_polish_degraded = False
+    if enable_content_polish and str(content_polish_prompt or "").strip():
+        try:
+            polished_content = request_polished_content(
+                provider=provider,
+                model=model,
+                ai_base_url=ai_base_url,
+                ai_api_key=ai_api_key,
+                ai_model=ai_model,
+                metadata=base_variables,
+                context=rendered_context,
+                polish_prompt=str(content_polish_prompt or "").strip(),
+                http_session=http_session,
+                timeout=timeout,
+            )
+        except Exception:
+            content_polish_degraded = True
     final_content = original_content.strip()
     if enable_content_polish and polished_content:
         final_content = polished_content
@@ -219,12 +305,12 @@ def apply_ai_polish_to_markdown(
     return {
         "enabled": True,
         "status": "success",
-        "model": ai_model,
+        "model": str((model or {}).get("model_id") or ai_model or ""),
         "template_applied": True,
         "summary": normalized["summary"],
         "tags": normalized["tags"],
         "content_polished": bool(enable_content_polish and polished_content),
-        "message": "AI 润色已应用",
+        "message": "AI 润色已应用（正文润色已降级）" if content_polish_degraded else "AI 润色已应用",
     }
 
 
@@ -239,11 +325,6 @@ def _build_interpreter_prompt(
     merged_prompts = {**template_variable_prompts}
     if parsed:
         merged_prompts.update(parsed)
-    if metadata.get("content_polish_prompt_enabled"):
-        merged_prompts.setdefault(
-            "content_polished",
-            str(metadata.get("content_polish_prompt") or "").strip(),
-        )
     if not merged_prompts:
         return render_template(
             interpreter_prompt,

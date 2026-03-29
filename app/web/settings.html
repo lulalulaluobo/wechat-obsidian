@@ -232,23 +232,45 @@
           启用正文润色（生成 content_polished）
         </label>
 
+        <div class="sep"></div>
+
+        <h3 class="card-title" style="font-size:18px;">连接与当前模型</h3>
+        <p class="card-desc">先选择实际要使用的模型，再测试连通性。下面的 Provider 和模型池只负责配置与维护。</p>
         <div class="field-row">
           <div class="field">
-            <label for="ai-base-url">OpenAI 兼容 Base URL</label>
-            <input id="ai-base-url" placeholder="https://api.openai.com/v1">
-            <div class="field-hint" id="hint-ai-base-url"></div>
+            <label for="ai-selected-model">当前使用模型</label>
+            <select id="ai-selected-model"></select>
+            <div class="field-hint" id="hint-ai-selected-model"></div>
           </div>
           <div class="field">
-            <label for="ai-model">Model</label>
-            <input id="ai-model" placeholder="gpt-5.4-mini">
-            <div class="field-hint" id="hint-ai-model"></div>
+            <label>&nbsp;</label>
+            <button id="test-ai-btn" class="btn btn-secondary" style="width:100%;">测试 AI 连通性</button>
+            <div class="field-hint">测试的是当前选择模型及其绑定的 Provider 连接配置。</div>
           </div>
         </div>
+        <div id="ai-result-area"></div>
 
+        <div class="sep"></div>
+
+        <h3 class="card-title" style="font-size:18px;">Provider 管理</h3>
+        <p class="card-desc">内置 provider 为只读协议定义，可编辑连接参数。也可以新增自定义 OpenAI Compatible provider。</p>
         <div class="field">
-          <label for="ai-api-key">API Key</label>
-          <input id="ai-api-key" type="password" placeholder="留空则保持不变">
-          <div class="field-hint text-muted" id="ai-api-key-meta"></div>
+          <label for="ai-provider-editor-select">当前编辑 Provider</label>
+          <select id="ai-provider-editor-select"></select>
+          <div class="field-hint">这里只负责编辑连接配置，不决定实际运行使用哪个模型。</div>
+        </div>
+        <div id="ai-provider-list"></div>
+        <div class="action-row" style="margin-top:10px;">
+          <button id="add-ai-provider-btn" class="btn btn-secondary">添加自定义 Provider</button>
+        </div>
+
+        <div class="sep"></div>
+
+        <h3 class="card-title" style="font-size:18px;">模型池</h3>
+        <p class="card-desc">可以维护多个模型定义，但运行时只会使用顶部选中的一个。</p>
+        <div id="ai-model-list"></div>
+        <div class="action-row" style="margin-top:10px;">
+          <button id="add-ai-model-btn" class="btn btn-secondary">添加模型</button>
         </div>
 
         <div class="field">
@@ -276,12 +298,6 @@
           <label for="ai-body-template">body 模板</label>
           <textarea id="ai-body-template" style="min-height:180px;"></textarea>
         </div>
-
-        <div class="action-row">
-          <button id="test-ai-btn" class="btn btn-secondary">测试 AI 连通性</button>
-          <button id="clear-ai-api-key" class="btn btn-danger">清空 AI API Key</button>
-        </div>
-        <div id="ai-result-area"></div>
 
         <div class="sep"></div>
 
@@ -350,6 +366,11 @@
     AdminUI.initTabs();
     const clearFields = new Set();
     let currentAiTemplateSource = "manual";
+    let aiProviders = [];
+    let aiModels = [];
+    let aiSelectedModelId = "";
+    let aiEditingProviderId = "";
+    let persistedAiModelIds = new Set();
 
     /* ── Helpers ── */
     function getImageMode() {
@@ -363,6 +384,225 @@
     document.querySelectorAll('input[name="image-mode"]').forEach((el) =>
       el.addEventListener("change", () => { syncS3Panel(); validateAll(); })
     );
+
+    function makeProviderId(prefix = "custom-provider") {
+      return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function makeModelId() {
+      return `model-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function getEditingProvider() {
+      return aiProviders.find((provider) => provider.id === aiEditingProviderId) || null;
+    }
+
+    function getSelectedModel() {
+      return aiModels.find((model) => model.id === aiSelectedModelId) || null;
+    }
+
+    function getSelectedProvider() {
+      const model = getSelectedModel();
+      if (!model) return null;
+      return aiProviders.find((provider) => provider.id === model.provider_id) || null;
+    }
+
+    function ensureSelectedModel() {
+      const candidate = aiModels.find((model) => model.id === aiSelectedModelId);
+      if (candidate) return;
+      aiSelectedModelId = aiModels[0]?.id || "";
+    }
+
+    function ensureEditingProvider() {
+      const preferredProviderId = getSelectedProvider()?.id || aiProviders[0]?.id || "";
+      if (!aiProviders.some((provider) => provider.id === aiEditingProviderId)) {
+        aiEditingProviderId = preferredProviderId;
+      }
+    }
+
+    function renderAiSelectedModelOptions() {
+      const select = document.getElementById("ai-selected-model");
+      select.innerHTML = aiModels.map((model) => {
+        const provider = aiProviders.find((item) => item.id === model.provider_id);
+        const providerName = provider?.display_name || model.provider_id || "-";
+        return `<option value="${model.id}">${model.display_name} · ${providerName}</option>`;
+      }).join("");
+      if (aiModels.length === 0) {
+        select.innerHTML = `<option value="">暂无可用模型</option>`;
+      }
+      select.value = aiSelectedModelId || aiModels[0]?.id || "";
+    }
+
+    function renderAiProviders() {
+      const editorSelect = document.getElementById("ai-provider-editor-select");
+      editorSelect.innerHTML = aiProviders.map((provider) => `<option value="${provider.id}">${provider.display_name}${provider.built_in ? " · 内置" : " · 自定义"}</option>`).join("");
+      if (!editorSelect.innerHTML) {
+        editorSelect.innerHTML = `<option value="">暂无 Provider</option>`;
+      }
+      editorSelect.value = aiEditingProviderId || aiProviders[0]?.id || "";
+
+      const provider = getEditingProvider();
+      const container = document.getElementById("ai-provider-list");
+      if (!provider) {
+        container.innerHTML = "";
+        return;
+      }
+      container.innerHTML = `
+        <div class="card" style="padding:16px; margin-top:12px;" data-provider-id="${provider.id}">
+          <div class="action-row" style="justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <strong>${provider.display_name || provider.id}</strong>
+                <span class="chip">${provider.type}</span>
+                ${provider.built_in ? '<span class="chip">内置</span>' : '<span class="chip">自定义</span>'}
+              </div>
+              <div class="text-sm text-muted" style="margin-top:6px;">${provider.built_in ? '协议类型固定，只编辑连接配置。' : '自定义 provider 当前走 OpenAI Compatible 协议。'}</div>
+            </div>
+            <div class="action-row">
+              ${provider.built_in ? "" : '<button type="button" class="btn btn-danger" data-provider-remove="true">删除</button>'}
+            </div>
+          </div>
+          <div class="field-row" style="margin-top:12px;">
+            <div class="field">
+              <label>名称</label>
+              <input data-provider-field="display_name" value="${AdminUI.escapeHtml(provider.display_name || "")}" placeholder="Provider 名称" ${provider.built_in ? "disabled" : ""}>
+            </div>
+            <div class="field">
+              <label>Base URL</label>
+              <input data-provider-field="base_url" value="${AdminUI.escapeHtml(provider.base_url || "")}" placeholder="https://api.example.com/v1">
+            </div>
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <input type="password" data-provider-field="api_key" value="" placeholder="留空则保持不变">
+            <div class="field-hint text-muted">${provider.api_key_configured ? `已配置：${provider.api_key_masked}` : "未配置"}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAiModels() {
+      const providerOptions = aiProviders.map((provider) => `<option value="${provider.id}">${provider.display_name}</option>`).join("");
+      const container = document.getElementById("ai-model-list");
+      container.innerHTML = aiModels.map((model) => `
+        <div class="card" style="padding:16px; margin-top:12px;" data-model-id="${model.id}">
+          <div class="action-row" style="justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <strong>${model.display_name || model.model_id || model.id}</strong>
+                <span class="chip">${model.model_id}</span>
+                ${aiSelectedModelId === model.id ? '<span class="badge info">当前使用</span>' : ""}
+              </div>
+            </div>
+            <div class="action-row">
+              <button type="button" class="btn btn-danger" data-model-remove="true">删除</button>
+            </div>
+          </div>
+          <div class="field-row" style="margin-top:12px;">
+            <div class="field">
+              <label>显示名称</label>
+              <input data-model-field="display_name" value="${AdminUI.escapeHtml(model.display_name || "")}" placeholder="界面显示名称">
+            </div>
+            <div class="field">
+              <label>模型 ID</label>
+              <input data-model-field="model_id" value="${AdminUI.escapeHtml(model.model_id || "")}" placeholder="gpt-5.4-mini">
+            </div>
+          </div>
+          <div class="field">
+            <label>绑定 Provider</label>
+            <select data-model-field="provider_id">${providerOptions}</select>
+          </div>
+        </div>
+      `).join("");
+      container.querySelectorAll("[data-model-field='provider_id']").forEach((selectEl, index) => {
+        selectEl.value = aiModels[index]?.provider_id || "";
+      });
+    }
+
+    function renderAiRegistry() {
+      ensureSelectedModel();
+      ensureEditingProvider();
+      renderAiProviders();
+      renderAiModels();
+      renderAiSelectedModelOptions();
+      validateAll();
+    }
+
+    function validateAiRegistry() {
+      let ok = true;
+      const selectedHint = document.getElementById("hint-ai-selected-model");
+      const aiEnabled = document.getElementById("ai-enabled").checked;
+      if (!aiEnabled) {
+        selectedHint.textContent = "";
+        selectedHint.className = "field-hint";
+        return true;
+      }
+
+      const selectedModel = getSelectedModel();
+      const selectedProvider = getSelectedProvider();
+      if (!selectedModel) {
+        selectedHint.textContent = "启用 AI 时请至少选择一个模型";
+        selectedHint.className = "field-hint error";
+        ok = false;
+      } else if (!selectedProvider) {
+        selectedHint.textContent = "当前模型未绑定有效 Provider";
+        selectedHint.className = "field-hint error";
+        ok = false;
+      } else {
+        selectedHint.textContent = `${selectedModel.display_name} · ${selectedProvider.display_name}`;
+        selectedHint.className = "field-hint success";
+      }
+
+      if (selectedProvider) {
+        const providerName = selectedProvider.display_name || selectedProvider.id;
+        const providerBaseUrl = String(selectedProvider.base_url || "").trim();
+        const providerApiKey = String(selectedProvider.api_key || "").trim();
+        const providerHasSavedKey = Boolean(selectedProvider.api_key_configured);
+        if (["openai_compatible", "openrouter", "ollama", "custom"].includes(selectedProvider.type)) {
+          if (!/^https?:\/\//i.test(providerBaseUrl)) {
+            ok = false;
+            selectedHint.textContent = `${providerName} 需要有效的 Base URL`;
+            selectedHint.className = "field-hint error";
+          }
+        }
+        if (["anthropic", "gemini", "openrouter"].includes(selectedProvider.type) && !(providerApiKey || providerHasSavedKey)) {
+          ok = false;
+          selectedHint.textContent = `${providerName} 需要 API Key`;
+          selectedHint.className = "field-hint error";
+        }
+      }
+      return ok;
+    }
+
+    async function persistSelectedAiModel(previousModelId) {
+      const selectedHint = document.getElementById("hint-ai-selected-model");
+      if (!aiSelectedModelId) return true;
+      if (!persistedAiModelIds.has(aiSelectedModelId)) {
+        selectedHint.textContent = "新模型或未保存变更需要先点“保存并生效”，正式转换才会使用它。";
+        selectedHint.className = "field-hint";
+        AdminUI.toast("当前模型已切换，但新模型需先保存后才能用于正式转换", "warn");
+        return false;
+      }
+      try {
+        const res = await fetch("/api/admin/ai-selection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ai_selected_model_id: aiSelectedModelId }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "当前模型应用失败");
+        }
+        selectedHint.textContent = `${data.ai_selected_model?.display_name || getSelectedModel()?.display_name || "-"} · ${data.ai_selected_provider?.display_name || getSelectedProvider()?.display_name || "-"} · 已自动应用`;
+        selectedHint.className = "field-hint success";
+        return true;
+      } catch (error) {
+        aiSelectedModelId = previousModelId;
+        renderAiRegistry();
+        AdminUI.toast(String(error.message || error), "error");
+        return false;
+      }
+    }
 
     /* ── Validators ── */
     const validators = {
@@ -411,15 +651,6 @@
       "telegram-webhook-secret": (v) => !document.getElementById("telegram-enabled").checked || v || document.getElementById("telegram-webhook-secret-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 Telegram 时需要 Webhook Secret" },
-      "ai-base-url": (v) => !document.getElementById("ai-enabled").checked || /^https?:\/\//i.test(v)
-        ? { ok: true, text: "" }
-        : { ok: false, text: "必须以 http:// 或 https:// 开头" },
-      "ai-model": (v) => !document.getElementById("ai-enabled").checked || Boolean(v)
-        ? { ok: true, text: "" }
-        : { ok: false, text: "启用 AI 时请填写模型" },
-      "ai-api-key": (v) => !document.getElementById("ai-enabled").checked || v || document.getElementById("ai-api-key-meta").textContent.includes("已配置")
-        ? { ok: true, text: "" }
-        : { ok: false, text: "启用 AI 时需要 API Key" },
       "ai-context-template": (v) => !document.getElementById("ai-enabled").checked || Boolean(v.trim())
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 AI 时请填写解释器上下文模板" },
@@ -444,7 +675,7 @@
 
     function validateAll() {
       const ids = Object.keys(validators);
-      const ok = ids.every(validateField);
+      const ok = ids.every(validateField) && validateAiRegistry();
       document.getElementById("save-settings").disabled = !ok;
       return ok;
     }
@@ -525,12 +756,112 @@
       AdminUI.toast("已标记清空 Telegram Webhook Secret", "warn");
     });
 
-    document.getElementById("clear-ai-api-key").addEventListener("click", () => {
-      clearFields.add("ai_api_key");
-      document.getElementById("ai-api-key").value = "";
-      document.getElementById("ai-api-key-meta").textContent = "保存时将清空 AI API Key";
+    document.getElementById("ai-provider-list").addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const field = target.getAttribute("data-provider-field");
+      if (!field) return;
+      const card = target.closest("[data-provider-id]");
+      const providerId = card?.getAttribute("data-provider-id");
+      const provider = aiProviders.find((item) => item.id === providerId);
+      if (!provider) return;
+      if (target instanceof HTMLInputElement) {
+        provider[field] = target.value;
+        if (field === "api_key") {
+          provider.api_key_configured = Boolean(target.value) || Boolean(provider.api_key_configured);
+        }
+      }
       validateAll();
-      AdminUI.toast("已标记清空 AI API Key", "warn");
+    });
+
+    document.getElementById("ai-provider-list").addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const card = target.closest("[data-provider-id]");
+      const providerId = card?.getAttribute("data-provider-id");
+      const provider = aiProviders.find((item) => item.id === providerId);
+      if (!provider) return;
+      if (target instanceof HTMLButtonElement && target.getAttribute("data-provider-remove") === "true") {
+        aiProviders = aiProviders.filter((item) => item.id !== providerId);
+        aiModels = aiModels.filter((item) => item.provider_id !== providerId);
+        ensureSelectedModel();
+        renderAiRegistry();
+      }
+    });
+
+    document.getElementById("ai-model-list").addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const field = target.getAttribute("data-model-field");
+      if (!field) return;
+      const card = target.closest("[data-model-id]");
+      const modelId = card?.getAttribute("data-model-id");
+      const model = aiModels.find((item) => item.id === modelId);
+      if (!model) return;
+      if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+        model[field] = target.value;
+      }
+      if (field === "provider_id") {
+        ensureSelectedModel();
+      }
+      validateAll();
+    });
+
+    document.getElementById("ai-model-list").addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const card = target.closest("[data-model-id]");
+      const modelId = card?.getAttribute("data-model-id");
+      if (!modelId) return;
+      if (target instanceof HTMLButtonElement && target.getAttribute("data-model-remove") === "true") {
+        aiModels = aiModels.filter((item) => item.id !== modelId);
+        ensureSelectedModel();
+        renderAiRegistry();
+      }
+    });
+
+    document.getElementById("ai-selected-model").addEventListener("change", async (event) => {
+      const previousModelId = aiSelectedModelId;
+      aiSelectedModelId = event.target.value;
+      renderAiRegistry();
+      await persistSelectedAiModel(previousModelId);
+    });
+
+    document.getElementById("ai-provider-editor-select").addEventListener("change", (event) => {
+      aiEditingProviderId = event.target.value;
+      renderAiProviders();
+      validateAll();
+    });
+
+    document.getElementById("add-ai-provider-btn").addEventListener("click", () => {
+      const providerId = makeProviderId();
+      aiProviders.push({
+        id: providerId,
+        type: "openai_compatible",
+        display_name: "自定义 OpenAI Compatible",
+        built_in: false,
+        enabled: true,
+        base_url: "",
+        api_key: "",
+        api_key_configured: false,
+        api_key_masked: "",
+      });
+      aiEditingProviderId = providerId;
+      renderAiRegistry();
+    });
+
+    document.getElementById("add-ai-model-btn").addEventListener("click", () => {
+      const providerId = aiProviders[0]?.id || "openai-compatible-default";
+      const modelId = makeModelId();
+      aiModels.push({
+        id: modelId,
+        provider_id: providerId,
+        display_name: "新模型",
+        model_id: "gpt-5.4-mini",
+        enabled: true,
+      });
+      aiSelectedModelId = modelId;
+      renderAiRegistry();
     });
 
     /* ── AI Test ── */
@@ -539,13 +870,17 @@
       btn.disabled = true;
       btn.textContent = "测试中…";
       try {
+        const provider = getSelectedProvider();
+        const model = getSelectedModel();
+        if (!provider || !model) {
+          throw new Error("请先选择一个可用的 AI 模型");
+        }
         const res = await fetch("/api/admin/ai-test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            base_url: document.getElementById("ai-base-url").value.trim(),
-            api_key: document.getElementById("ai-api-key").value.trim(),
-            model: document.getElementById("ai-model").value.trim(),
+            provider,
+            model,
           }),
         });
         const data = await res.json();
@@ -752,8 +1087,23 @@
         ai_enabled: document.getElementById("ai-enabled").checked,
         ai_allow_body_polish: document.getElementById("ai-allow-body-polish").checked,
         ai_enable_content_polish: document.getElementById("ai-enable-content-polish").checked,
-        ai_base_url: document.getElementById("ai-base-url").value.trim(),
-        ai_model: document.getElementById("ai-model").value.trim(),
+        ai_providers: aiProviders.map((provider) => ({
+          id: provider.id,
+          type: provider.type,
+          display_name: provider.display_name,
+          built_in: provider.built_in,
+          enabled: true,
+          base_url: String(provider.base_url || "").trim(),
+          api_key: String(provider.api_key || "").trim(),
+        })),
+        ai_models: aiModels.map((model) => ({
+          id: model.id,
+          provider_id: model.provider_id,
+          display_name: model.display_name,
+          model_id: model.model_id,
+          enabled: true,
+        })),
+        ai_selected_model_id: aiSelectedModelId,
         ai_prompt_template: document.getElementById("ai-prompt-template").value,
         ai_frontmatter_template: document.getElementById("ai-frontmatter-template").value,
         ai_body_template: document.getElementById("ai-body-template").value,
@@ -766,12 +1116,10 @@
       const s3Secret = document.getElementById("s3-secret-key").value.trim();
       const telegramToken = document.getElementById("telegram-bot-token").value.trim();
       const telegramSecret = document.getElementById("telegram-webhook-secret").value.trim();
-      const aiApiKey = document.getElementById("ai-api-key").value.trim();
       if (fnsToken) payload.fns_token = fnsToken;
       if (s3Secret) payload.image_storage_secret_access_key = s3Secret;
       if (telegramToken) payload.telegram_bot_token = telegramToken;
       if (telegramSecret) payload.telegram_webhook_secret = telegramSecret;
-      if (aiApiKey) payload.ai_api_key = aiApiKey;
 
       try {
         const res = await fetch("/api/admin/settings", {
@@ -788,7 +1136,7 @@
               { label: "FNS Vault", value: data.settings?.fns_vault || "-" },
               { label: "图片模式", value: data.settings?.image_mode === "s3_hotlink" ? "S3 图床外链" : "微信原链" },
               { label: "Telegram", value: data.settings?.telegram_enabled ? "已启用" : "未启用" },
-              { label: "AI 润色", value: data.settings?.ai_enabled ? `已启用 / ${data.settings?.ai_model || "-"}` : "未启用" },
+              { label: "AI 润色", value: data.settings?.ai_enabled ? `已启用 / ${data.settings?.ai_selected_model?.display_name || data.settings?.ai_model || "-"}` : "未启用" },
             ],
             json: data,
           }));
@@ -880,17 +1228,22 @@
         document.getElementById("ai-enabled").checked = Boolean(data.ai_enabled);
         document.getElementById("ai-allow-body-polish").checked = Boolean(data.ai_allow_body_polish);
         document.getElementById("ai-enable-content-polish").checked = Boolean(data.ai_enable_content_polish);
-        document.getElementById("ai-base-url").value = data.ai_base_url || "";
-        document.getElementById("ai-model").value = data.ai_model || "";
-        document.getElementById("ai-api-key").value = "";
-        document.getElementById("ai-api-key-meta").textContent = data.ai_api_key_configured
-          ? `已配置：${data.ai_api_key_masked}` : "未配置";
+        aiProviders = Array.isArray(data.ai_providers) ? data.ai_providers.map((provider) => ({
+          ...provider,
+          enabled: true,
+          api_key: "",
+        })) : [];
+        aiModels = Array.isArray(data.ai_models) ? data.ai_models.map((model) => ({ ...model, enabled: true })) : [];
+        persistedAiModelIds = new Set(aiModels.map((model) => model.id));
+        aiSelectedModelId = data.ai_selected_model_id || "";
+        aiEditingProviderId = data.ai_selected_provider?.id || aiProviders[0]?.id || "";
         document.getElementById("ai-prompt-template").value = data.ai_prompt_template || "";
         document.getElementById("ai-frontmatter-template").value = data.ai_frontmatter_template || "";
         document.getElementById("ai-body-template").value = data.ai_body_template || "";
         document.getElementById("ai-context-template").value = data.ai_context_template || "{{content}}";
         document.getElementById("ai-content-polish-prompt").value = data.ai_content_polish_prompt || "";
         currentAiTemplateSource = data.ai_template_source || "manual";
+        renderAiRegistry();
 
         if (data.telegram_enabled || data.telegram_webhook_status !== "inactive" || data.telegram_webhook_message) {
           AdminUI.setHtml("telegram-result-area", AdminUI.resultHtml({

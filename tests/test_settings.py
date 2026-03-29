@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -174,9 +175,116 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.ai_context_template, "{{title}}\n\n{{content}}")
         self.assertEqual(settings.ai_template_source, "clipper_import")
         self.assertEqual(settings.ai_content_polish_prompt, "请把正文整理为更适合 Obsidian 阅读的 Markdown")
-        self.assertEqual(runtime_data["user_settings"]["ai_model"], "gpt-5.4-mini")
+        self.assertEqual(runtime_data["user_settings"]["ai"]["selected_model_id"], "model-openai-compatible-default")
+        self.assertEqual(runtime_data["user_settings"]["ai"]["models"][0]["model_id"], "gpt-5.4-mini")
         self.assertNotIn("ai-key-1", runtime_text)
-        self.assertIn("ai_api_key_encrypted", runtime_text)
+        self.assertIn("api_key_encrypted", runtime_text)
+
+    def test_runtime_config_migrates_legacy_ai_fields_into_provider_model_registry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            runtime_path.write_text(
+                json.dumps(
+                    {
+                        "auth": {
+                            "user": {
+                                "username": "admin",
+                                "password_hash": "placeholder",
+                            },
+                            "session_secret": "session-secret",
+                        },
+                        "user_settings": {
+                            "ai_enabled": True,
+                            "ai_base_url": "https://api.example.com/v1",
+                            "ai_api_key": "legacy-ai-key",
+                            "ai_model": "gpt-5.4-mini",
+                            "ai_prompt_template": "请总结 {{title}}",
+                            "ai_frontmatter_template": "---\ntitle: {{title}}\n---",
+                            "ai_body_template": "{{content}}",
+                            "ai_context_template": "{{content}}",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                runtime_data = load_runtime_config(runtime_path)
+                settings = get_settings()
+
+        self.assertIn("ai", runtime_data["user_settings"])
+        self.assertGreaterEqual(len(runtime_data["user_settings"]["ai"]["providers"]), 5)
+        self.assertEqual(settings.ai_selected_provider["type"], "openai_compatible")
+        self.assertEqual(settings.ai_selected_provider["base_url"], "https://api.example.com/v1")
+        self.assertEqual(settings.ai_selected_provider["api_key"], "legacy-ai-key")
+        self.assertEqual(settings.ai_selected_model["model_id"], "gpt-5.4-mini")
+        self.assertEqual(settings.ai_selected_model_id, settings.ai_selected_model["id"])
+        self.assertEqual(settings.ai_model, "gpt-5.4-mini")
+
+    def test_save_runtime_config_persists_ai_registry_and_encrypts_provider_api_keys(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                save_runtime_config(
+                    {
+                        "ai_enabled": True,
+                        "ai_providers": [
+                            {
+                                "id": "openai-compatible-default",
+                                "type": "openai_compatible",
+                                "display_name": "OpenAI Compatible",
+                                "built_in": True,
+                                "enabled": True,
+                                "base_url": "https://xinyuanai666.com/v1",
+                                "api_key": "provider-secret",
+                            },
+                            {
+                                "id": "anthropic-default",
+                                "type": "anthropic",
+                                "display_name": "Anthropic",
+                                "built_in": True,
+                                "enabled": False,
+                                "base_url": "",
+                                "api_key": "",
+                            },
+                        ],
+                        "ai_models": [
+                            {
+                                "id": "model-openai-compatible-gpt54mini",
+                                "provider_id": "openai-compatible-default",
+                                "display_name": "gpt-5.4-mini",
+                                "model_id": "gpt-5.4-mini",
+                                "enabled": True,
+                            }
+                        ],
+                        "ai_selected_model_id": "model-openai-compatible-gpt54mini",
+                        "ai_prompt_template": '{"summary":"一句话总结"}',
+                        "ai_frontmatter_template": "---\ntitle: {{title}}\nsummary: {{summary}}\n---",
+                        "ai_body_template": "{{content}}",
+                        "ai_context_template": "{{content}}",
+                    }
+                )
+                settings = get_settings()
+                runtime_text = runtime_path.read_text(encoding="utf-8")
+                runtime_data = load_runtime_config(runtime_path)
+
+        self.assertTrue(settings.ai_enabled)
+        self.assertEqual(settings.ai_selected_provider["type"], "openai_compatible")
+        self.assertEqual(settings.ai_selected_provider["base_url"], "https://xinyuanai666.com/v1")
+        self.assertEqual(settings.ai_selected_model["model_id"], "gpt-5.4-mini")
+        self.assertEqual(runtime_data["user_settings"]["ai"]["selected_model_id"], "model-openai-compatible-gpt54mini")
+        self.assertNotIn("provider-secret", runtime_text)
+        self.assertIn("api_key_encrypted", runtime_text)
 
     def test_runtime_config_requires_correct_master_key_for_encrypted_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:

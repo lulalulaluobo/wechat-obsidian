@@ -406,7 +406,9 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Webhook 对外基础地址", text)
         self.assertIn("白名单 Chat ID", text)
         self.assertIn("AI 润色", text)
-        self.assertIn("OpenAI 兼容 Base URL", text)
+        self.assertIn("Provider 管理", text)
+        self.assertIn("当前使用模型", text)
+        self.assertIn("连接与当前模型", text)
         self.assertIn("解释器提示词", text)
         self.assertIn("frontmatter 模板", text)
         self.assertIn("body 模板", text)
@@ -414,6 +416,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn("导入 Clipper JSON 模板", text)
         self.assertIn('id="clipper-json-file"', text)
         self.assertNotIn('id="paste-clipper-btn"', text)
+        self.assertNotIn('data-provider-field="enabled"', text)
+        self.assertNotIn('data-model-field="enabled"', text)
+        self.assertNotIn('data-model-selected="true"', text)
+        self.assertIn('document.getElementById("ai-provider-list").addEventListener("click"', text)
 
     def test_admin_settings_masks_telegram_secret_values(self):
         self._login()
@@ -621,9 +627,27 @@ class ApiTests(unittest.TestCase):
                 "image_storage_path_template": "wechat/{year}/{filename}",
                 "image_storage_public_base_url": "https://img.example.com",
                 "ai_enabled": True,
-                "ai_base_url": "https://api.example.com/v1",
-                "ai_api_key": "ai-secret-key",
-                "ai_model": "gpt-5.4-mini",
+                "ai_providers": [
+                    {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "ai-secret-key",
+                    }
+                ],
+                "ai_models": [
+                    {
+                        "id": "model-openai-compatible-gpt54mini",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    }
+                ],
+                "ai_selected_model_id": "model-openai-compatible-gpt54mini",
                 "ai_context_template": "{{content}}",
                 "ai_template_source": "manual",
             },
@@ -639,8 +663,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(data["image_storage_endpoint"], "https://s3.example.com")
         self.assertTrue(data["image_storage_secret_access_key_configured"])
         self.assertTrue(data["ai_enabled"])
-        self.assertTrue(data["ai_api_key_configured"])
         self.assertEqual(data["ai_model"], "gpt-5.4-mini")
+        self.assertEqual(data["ai_selected_model_id"], "model-openai-compatible-gpt54mini")
+        self.assertEqual(data["ai_selected_provider"]["type"], "openai_compatible")
+        self.assertEqual(data["ai_providers"][0]["base_url"], "https://api.example.com/v1")
+        self.assertTrue(data["ai_providers"][0]["api_key_configured"])
         self.assertEqual(data["ai_context_template"], "{{content}}")
         self.assertEqual(data["ai_template_source"], "manual")
         self.assertNotIn("fns-secret-token", str(data))
@@ -666,9 +693,27 @@ class ApiTests(unittest.TestCase):
                 "image_storage_path_template": "wechat/{year}/{filename}",
                 "image_storage_public_base_url": "https://img.example.com",
                 "ai_enabled": True,
-                "ai_base_url": "https://api.example.com/v1",
-                "ai_api_key": "ai-key-1",
-                "ai_model": "gpt-5.4-mini",
+                "ai_providers": [
+                    {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "ai-key-1",
+                    }
+                ],
+                "ai_models": [
+                    {
+                        "id": "model-openai-compatible-gpt54mini",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    }
+                ],
+                "ai_selected_model_id": "model-openai-compatible-gpt54mini",
                 "ai_prompt_template": "请总结 {{title}}",
                 "ai_frontmatter_template": "---\ntitle: {{title}}\nsummary: {{summary}}\n---",
                 "ai_body_template": "> [!summary]\n> {{summary}}",
@@ -697,6 +742,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(config_data["ai_enabled"])
         self.assertTrue(config_data["ai_configured"])
         self.assertEqual(config_data["ai_model"], "gpt-5.4-mini")
+        self.assertEqual(config_data["ai_selected_provider"], "openai_compatible")
         self.assertEqual(config_data["ai_template_source"], "clipper_import")
 
     def test_ai_test_endpoint_uses_current_form_payload(self):
@@ -714,17 +760,195 @@ class ApiTests(unittest.TestCase):
             response = self.client.post(
                 "/api/admin/ai-test",
                 json={
-                    "base_url": "https://api.example.com/v1",
-                    "api_key": "ai-key-1",
-                    "model": "gpt-5.4-mini",
+                    "provider": {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "ai-key-1",
+                        "enabled": True,
+                        "built_in": True,
+                    },
+                    "model": {
+                        "id": "model-openai-compatible-gpt54mini",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    },
                 },
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["success"])
-        self.assertEqual(mocked_test.call_args.kwargs["base_url"], "https://api.example.com/v1")
-        self.assertEqual(mocked_test.call_args.kwargs["api_key"], "ai-key-1")
-        self.assertEqual(mocked_test.call_args.kwargs["model"], "gpt-5.4-mini")
+        self.assertEqual(mocked_test.call_args.kwargs["provider"]["base_url"], "https://api.example.com/v1")
+        self.assertEqual(mocked_test.call_args.kwargs["provider"]["api_key"], "ai-key-1")
+        self.assertEqual(mocked_test.call_args.kwargs["model"]["model_id"], "gpt-5.4-mini")
+
+    def test_ai_test_endpoint_uses_selected_saved_model_when_request_is_empty(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "ai_enabled": True,
+                "ai_providers": [
+                    {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "saved-key",
+                    }
+                ],
+                "ai_models": [
+                    {
+                        "id": "saved-model",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    }
+                ],
+                "ai_selected_model_id": "saved-model",
+                "ai_prompt_template": '{"summary":"一句话总结"}',
+                "ai_frontmatter_template": "---\ntitle: {{title}}\n---",
+                "ai_body_template": "{{content}}",
+                "ai_context_template": "{{content}}",
+            },
+        )
+        with patch(
+            "app.api.routes.test_ai_connectivity",
+            return_value={
+                "success": True,
+                "latency_ms": 123,
+                "model": "gpt-5.4-mini",
+                "preview": "{\"pong\":\"ok\"}",
+                "message": "连接正常",
+            },
+        ) as mocked_test:
+            response = self.client.post("/api/admin/ai-test", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertEqual(mocked_test.call_args.kwargs["provider"]["id"], "openai-compatible-default")
+        self.assertEqual(mocked_test.call_args.kwargs["model"]["id"], "saved-model")
+
+    def test_ai_test_endpoint_merges_saved_api_key_when_form_provider_leaves_it_blank(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "ai_enabled": True,
+                "ai_providers": [
+                    {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "saved-key",
+                    }
+                ],
+                "ai_models": [
+                    {
+                        "id": "saved-model",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    }
+                ],
+                "ai_selected_model_id": "saved-model",
+            },
+        )
+        with patch(
+            "app.api.routes.test_ai_connectivity",
+            return_value={
+                "success": True,
+                "latency_ms": 88,
+                "model": "gpt-5.4-mini",
+                "preview": "{\"pong\":\"ok\"}",
+                "message": "连接正常",
+            },
+        ) as mocked_test:
+            response = self.client.post(
+                "/api/admin/ai-test",
+                json={
+                    "provider": {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "",
+                    },
+                    "model": {
+                        "id": "saved-model",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mocked_test.call_args.kwargs["provider"]["api_key"], "saved-key")
+
+    def test_ai_selected_model_can_be_updated_immediately(self):
+        self._login()
+        self.client.put(
+            "/api/admin/settings",
+            json={
+                "ai_enabled": True,
+                "ai_providers": [
+                    {
+                        "id": "openai-compatible-default",
+                        "type": "openai_compatible",
+                        "display_name": "OpenAI Compatible",
+                        "built_in": True,
+                        "enabled": True,
+                        "base_url": "https://api.example.com/v1",
+                        "api_key": "saved-key",
+                    }
+                ],
+                "ai_models": [
+                    {
+                        "id": "model-a",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-mini",
+                        "model_id": "gpt-5.4-mini",
+                        "enabled": True,
+                    },
+                    {
+                        "id": "model-b",
+                        "provider_id": "openai-compatible-default",
+                        "display_name": "gpt-5.4-nano",
+                        "model_id": "gpt-5.4-nano",
+                        "enabled": True,
+                    },
+                ],
+                "ai_selected_model_id": "model-a",
+            },
+        )
+
+        response = self.client.post("/api/admin/ai-selection", json={"ai_selected_model_id": "model-b"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ai_selected_model_id"], "model-b")
+        config_response = self.client.get("/api/admin/settings")
+        self.assertEqual(config_response.status_code, 200)
+        self.assertEqual(config_response.json()["ai_selected_model_id"], "model-b")
+
+    def test_ai_selected_model_update_rejects_unknown_model(self):
+        self._login()
+        response = self.client.post("/api/admin/ai-selection", json={"ai_selected_model_id": "missing-model"})
+
+        self.assertEqual(response.status_code, 400)
 
     def test_admin_settings_accepts_wechat_hotlink_without_storage_fields(self):
         self._login()

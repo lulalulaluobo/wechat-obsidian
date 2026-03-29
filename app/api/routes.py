@@ -19,6 +19,7 @@ from app.config import (
     build_admin_settings_payload,
     get_settings,
     save_runtime_config,
+    update_ai_selected_model,
     update_password,
     update_telegram_webhook_state,
 )
@@ -196,15 +197,50 @@ async def post_admin_ai_test(
 ) -> dict[str, Any]:
     _require_access(session_cookie)
     payload = await _read_convert_payload(request)
+    settings = get_settings()
+    provider_payload = payload.get("provider") if isinstance(payload.get("provider"), dict) else None
+    model_payload = payload.get("model") if isinstance(payload.get("model"), dict) else None
+    if provider_payload is None and model_payload is None:
+        provider_payload = dict(settings.ai_selected_provider or {})
+        model_payload = dict(settings.ai_selected_model or {})
+    elif provider_payload is None or model_payload is None:
+        raise HTTPException(status_code=400, detail="AI 测试需要同时提供 provider 和 model")
+    else:
+        saved_provider = dict(settings.ai_selected_provider or {})
+        saved_model = dict(settings.ai_selected_model or {})
+        if (
+            saved_provider
+            and str(provider_payload.get("id") or "").strip() == str(saved_provider.get("id") or "").strip()
+            and not str(provider_payload.get("api_key") or "").strip()
+        ):
+            provider_payload = {**saved_provider, **provider_payload, "api_key": str(saved_provider.get("api_key") or "")}
+        if (
+            saved_model
+            and str(model_payload.get("id") or "").strip() == str(saved_model.get("id") or "").strip()
+        ):
+            model_payload = {**saved_model, **model_payload}
     try:
         return test_ai_connectivity(
-            base_url=str(payload.get("base_url") or "").strip(),
-            api_key=str(payload.get("api_key") or "").strip(),
-            model=str(payload.get("model") or "").strip(),
-            timeout=int(payload.get("timeout") or get_settings().default_timeout),
+            provider=provider_payload,
+            model=model_payload,
+            timeout=int(payload.get("timeout") or settings.default_timeout),
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/api/admin/ai-selection")
+async def update_admin_ai_selection(
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    try:
+        update_ai_selected_model(str(payload.get("ai_selected_model_id") or ""))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return build_admin_settings_payload()
 
 
 @router.put("/api/admin/settings")

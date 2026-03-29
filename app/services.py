@@ -13,6 +13,7 @@ from typing import Any
 
 import requests
 
+from app.ai_adapters import extract_completion_preview, request_ai_completion, validate_provider_model
 from app.ai_polish import apply_ai_polish_to_markdown
 from app.config import get_settings, update_telegram_webhook_state
 from app.core.pipeline import run_pipeline, sanitize_filename
@@ -300,6 +301,7 @@ def build_config_payload() -> dict[str, Any]:
         "ai_enabled": settings.ai_enabled,
         "ai_configured": settings.ai_configured,
         "ai_model": settings.ai_model,
+        "ai_selected_provider": (settings.ai_selected_provider or {}).get("type"),
         "ai_enable_content_polish": settings.ai_enable_content_polish,
         "ai_template_source": settings.ai_template_source,
     }
@@ -329,9 +331,8 @@ def apply_ai_polish_to_result(
             "author": str(result.get("author") or ""),
             "url": str(result.get("original_url") or url),
         },
-        ai_base_url=str(settings.ai_base_url),
-        ai_api_key=str(settings.ai_api_key),
-        ai_model=settings.ai_model,
+        provider=dict(settings.ai_selected_provider or {}),
+        model=dict(settings.ai_selected_model or {}),
         interpreter_prompt=settings.ai_prompt_template,
         frontmatter_template=settings.ai_frontmatter_template,
         body_template=settings.ai_body_template,
@@ -347,51 +348,33 @@ def apply_ai_polish_to_result(
 
 def test_ai_connectivity(
     *,
-    base_url: str,
-    api_key: str,
-    model: str,
+    provider: dict[str, Any],
+    model: dict[str, Any],
     timeout: int = 30,
     http_session=None,
 ) -> dict[str, Any]:
-    normalized_base_url = str(base_url or "").strip().rstrip("/")
-    normalized_api_key = str(api_key or "").strip()
-    normalized_model = str(model or "").strip()
-    if not normalized_base_url:
-        raise ValueError("AI Base URL 不能为空")
-    if not normalized_base_url.startswith(("http://", "https://")):
-        raise ValueError("AI Base URL 必须以 http:// 或 https:// 开头")
-    if not normalized_api_key:
-        raise ValueError("AI API Key 不能为空")
-    if not normalized_model:
-        raise ValueError("AI Model 不能为空")
-
-    session = http_session or requests.Session()
+    normalized_provider = dict(provider or {})
+    normalized_model = dict(model or {})
+    validate_provider_model(normalized_provider, normalized_model)
     started = time.perf_counter()
     try:
-        response = session.post(
-            f"{normalized_base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {normalized_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": normalized_model,
-                "temperature": 0,
-                "max_tokens": 32,
-                "messages": [
-                    {"role": "system", "content": "你是连通性测试助手，只返回极简文本。"},
-                    {"role": "user", "content": "请返回 JSON：{\"pong\":\"ok\"}"},
-                ],
-            },
+        payload = request_ai_completion(
+            provider=normalized_provider,
+            model=normalized_model,
+            messages=[
+                {"role": "system", "content": "你是连通性测试助手，只返回极简文本。"},
+                {"role": "user", "content": "请返回 JSON：{\"pong\":\"ok\"}"},
+            ],
             timeout=timeout,
+            http_session=http_session,
+            temperature=0,
+            max_tokens=32,
         )
-        response.raise_for_status()
-        payload = response.json()
     except requests.Timeout as error:
         return {
             "success": False,
             "latency_ms": int((time.perf_counter() - started) * 1000),
-            "model": normalized_model,
+            "model": str(normalized_model.get("model_id") or ""),
             "preview": "",
             "message": f"请求超时: {error}",
         }
@@ -399,7 +382,7 @@ def test_ai_connectivity(
         return {
             "success": False,
             "latency_ms": int((time.perf_counter() - started) * 1000),
-            "model": normalized_model,
+            "model": str(normalized_model.get("model_id") or ""),
             "preview": "",
             "message": f"请求失败: {error}",
         }
@@ -407,16 +390,24 @@ def test_ai_connectivity(
         return {
             "success": False,
             "latency_ms": int((time.perf_counter() - started) * 1000),
-            "model": normalized_model,
+            "model": str(normalized_model.get("model_id") or ""),
             "preview": "",
             "message": f"响应不是有效 JSON: {error}",
         }
+    except RuntimeError as error:
+        return {
+            "success": False,
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "model": str(normalized_model.get("model_id") or ""),
+            "preview": "",
+            "message": str(error),
+        }
 
-    preview = _extract_chat_preview(payload)
+    preview = extract_completion_preview(payload, provider_type=str(normalized_provider.get("type") or "openai_compatible"))
     return {
         "success": True,
         "latency_ms": int((time.perf_counter() - started) * 1000),
-        "model": str(payload.get("model") or normalized_model),
+        "model": str(payload.get("model") or normalized_model.get("model_id") or ""),
         "preview": preview,
         "message": "连接正常",
     }
