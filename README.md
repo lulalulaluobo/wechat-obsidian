@@ -2,7 +2,7 @@
 
 [中文说明](README.zh-CN.md)
 
-Local FastAPI service for converting WeChat public articles into Markdown and syncing them to Fast Note Sync for Obsidian.
+Local FastAPI service for converting WeChat public articles and generic long-form web pages into Markdown and syncing them to Fast Note Sync for Obsidian.
 
 ## Run
 
@@ -18,6 +18,7 @@ Open `http://127.0.0.1:8765` or `http://<your-lan-ip>:8765`.
 - Main page: `http://127.0.0.1:8765/` or `http://<your-lan-ip>:8765/`
 - Login: built-in single account
 - Settings page: `http://127.0.0.1:8765/settings` or `http://<your-lan-ip>:8765/settings`
+- Task history page: `http://127.0.0.1:8765/tasks` or `http://<your-lan-ip>:8765/tasks`
 
 ## Docker
 
@@ -90,6 +91,7 @@ Copy [.env.example](/path/to/wechat-md-server/.env.example) to your deployment e
 - Image mode: `wechat_hotlink`
 - Runtime config path: `data/runtime-config.json`
 - Internal work directory root: `data/workdir/`
+- Task history path: `data/task-history.jsonl`
 
 Optional environment variables:
 
@@ -133,6 +135,22 @@ Optional environment variables:
   - optional `content_polished` body output
 - AI body polish is opt-in and can be overridden per single/batch run.
 - The settings page supports Clipper-style template import from a JSON file and maps it into the internal interpreter template fields.
+- The task history page supports filtering by trigger channel, source type, and status.
+- Failed tasks can be rerun individually, and selected tasks can be rerun in batch.
+- Task history is stored separately from runtime config in `task-history.jsonl`.
+
+## Task History
+
+- `/tasks` provides a dedicated task history page.
+- Each record shows:
+  - trigger time
+  - trigger channel (`web`, `telegram`, `feishu`)
+  - source type (`wechat`, `web`)
+  - note title
+  - source URL
+  - execution status
+- Failed tasks can be rerun directly.
+- Selected tasks can be rerun in batch without resending the original links.
 
 ## AI Polish
 
@@ -178,7 +196,8 @@ Optional environment variables:
 - Telegram Bot webhook is supported for single-article conversion.
 - Feishu Bot webhook is supported for single-article conversion.
 - Both bot flows:
-  - accept one WeChat article link per message
+  - accept one link per message
+  - support WeChat and generic web links
   - immediately acknowledge receipt
   - run conversion asynchronously
   - send a completion reply with title, sync path, and image mode

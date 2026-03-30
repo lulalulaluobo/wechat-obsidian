@@ -343,7 +343,11 @@ def _try_parse_prompt_mapping(interpreter_prompt: str) -> dict[str, str] | None:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        return None
+        relaxed = re.sub(r",(\s*[}\]])", r"\1", text)
+        try:
+            parsed = json.loads(relaxed)
+        except json.JSONDecodeError:
+            return None
     if not isinstance(parsed, dict):
         return None
     normalized: dict[str, str] = {}

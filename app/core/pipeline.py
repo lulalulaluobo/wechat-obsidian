@@ -1341,13 +1341,13 @@ def build_output_paths(title: str, output_base_dir: Path) -> tuple[Path, Path, s
     return output_dir, markdown_path, folder_name
 
 
-def run_pipeline(url: str, output_base_dir: Path, save_html: bool, timeout: int) -> Dict[str, object]:
-    pipeline = WeChatArticlePipeline(timeout=timeout)
-    if not pipeline.validate_url(url):
-        raise ValueError('无效的微信文章链接，仅支持 mp.weixin.qq.com 或 weixin.qq.com')
-
-    source_html = pipeline.fetch_html(url)
-    article = pipeline.extract_article(source_html, url)
+def run_article_pipeline(
+    article: ArticleData,
+    output_base_dir: Path,
+    save_html: bool,
+    timeout: int,
+    source_html: str | None = None,
+) -> Dict[str, object]:
     output_dir, markdown_path, folder_name = build_output_paths(article.title, output_base_dir)
     downloader = MarkdownImageDownloader(
         output_dir=output_dir,
@@ -1370,12 +1370,14 @@ def run_pipeline(url: str, output_base_dir: Path, save_html: bool, timeout: int)
     html_path = None
     if save_html:
         html_path = output_dir / 'source.html'
-        html_path.write_text(pipeline.build_clean_html(article), encoding='utf-8')
+        html_content = source_html or clean_article_html
+        html_path.write_text(html_content, encoding='utf-8')
 
     return {
         'title': article.title,
         'author': article.author,
         'account_name': article.account_name,
+        'original_url': article.original_url,
         'output_dir': str(output_dir),
         'folder_name': folder_name,
         'markdown_file': str(markdown_path),
@@ -1385,6 +1387,22 @@ def run_pipeline(url: str, output_base_dir: Path, save_html: bool, timeout: int)
         'format_summary': format_summary,
         'clean_html_preview_length': len(clean_article_html),
     }
+
+
+def run_pipeline(url: str, output_base_dir: Path, save_html: bool, timeout: int) -> Dict[str, object]:
+    pipeline = WeChatArticlePipeline(timeout=timeout)
+    if not pipeline.validate_url(url):
+        raise ValueError('无效的微信文章链接，仅支持 mp.weixin.qq.com 或 weixin.qq.com')
+
+    source_html = pipeline.fetch_html(url)
+    article = pipeline.extract_article(source_html, url)
+    return run_article_pipeline(
+        article=article,
+        output_base_dir=output_base_dir,
+        save_html=save_html,
+        timeout=timeout,
+        source_html=pipeline.build_clean_html(article),
+    )
 
 
 def safe_print(*values: object, sep: str = ' ', end: str = '\n', file=None) -> None:

@@ -39,6 +39,13 @@ async def settings_page(
     return _resolve_page("settings.html", session_cookie)
 
 
+@app.get("/tasks", include_in_schema=False)
+async def tasks_page(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    return _resolve_page("tasks.html", session_cookie)
+
+
 @app.get("/login", include_in_schema=False)
 async def login_page(
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),

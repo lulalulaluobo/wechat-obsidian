@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.ai_polish import (
+    _try_parse_prompt_mapping,
     apply_ai_polish_to_markdown,
     build_prompt_from_variable_prompts,
     extract_prompt_variables_from_templates,
@@ -50,6 +51,19 @@ class AIPolishTests(unittest.TestCase):
         self.assertIn("summary: 一句话", rendered)
         self.assertIn("missing: ", rendered)
         self.assertNotIn("{{missing}}", rendered)
+
+    def test_try_parse_prompt_mapping_accepts_trailing_comma_json(self):
+        parsed = _try_parse_prompt_mapping(
+            '{\n  "summary": "一句话总结",\n  "tags": "根据正文生成5个标签",\n}'
+        )
+
+        self.assertEqual(
+            parsed,
+            {
+                "summary": "一句话总结",
+                "tags": "根据正文生成5个标签",
+            },
+        )
 
     def test_apply_ai_polish_to_markdown_builds_frontmatter_and_template_blocks(self):
         markdown_path = Path(self.temp_dir.name) / "article.md"

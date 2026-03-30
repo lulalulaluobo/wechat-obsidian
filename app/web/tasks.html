@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务历史 — Wechat MD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="logo">Wechat <span>MD</span></div>
+    <a class="nav-item" href="/">转换</a>
+    <a class="nav-item active" href="/tasks">任务历史</a>
+    <a class="nav-item" href="/settings">设置</a>
+    <button id="logout-btn" class="nav-item logout">退出</button>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>任务历史</h1>
+      <p>查看最近任务、源文链接，并对失败或选中的任务重新执行任务流。</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">筛选与操作</h2>
+      <p class="card-desc">按触发方式和输入源过滤，支持批量重跑选中任务。</p>
+      <div class="field-row">
+        <div class="field">
+          <label for="filter-trigger-channel">触发方式</label>
+          <select id="filter-trigger-channel">
+            <option value="">全部</option>
+            <option value="web">网页端</option>
+            <option value="telegram">Telegram Bot</option>
+            <option value="feishu">飞书 Bot</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filter-source-type">输入源</label>
+          <select id="filter-source-type">
+            <option value="">全部</option>
+            <option value="wechat">微信公众号</option>
+            <option value="web">普通网页</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filter-status">状态</label>
+          <select id="filter-status">
+            <option value="">全部</option>
+            <option value="queued">排队中</option>
+            <option value="running">处理中</option>
+            <option value="success">成功</option>
+            <option value="error">失败</option>
+          </select>
+        </div>
+      </div>
+      <div class="action-row mt-0">
+        <button id="refresh-tasks" class="btn btn-secondary">刷新列表</button>
+        <button id="rerun-selected" class="btn btn-primary">重跑选中任务</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">最近 50 条任务</h2>
+      <p class="card-desc">列表包含时间、触发方式、输入源、笔记名、源文链接和状态。</p>
+      <div id="tasks-result-area"></div>
+      <div id="tasks-empty" class="card-desc">暂无任务记录。</div>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px 8px;">选择</th>
+              <th style="text-align:left; padding:10px 8px;">时间</th>
+              <th style="text-align:left; padding:10px 8px;">触发方式</th>
+              <th style="text-align:left; padding:10px 8px;">输入源</th>
+              <th style="text-align:left; padding:10px 8px;">任务笔记名称</th>
+              <th style="text-align:left; padding:10px 8px;">源文链接</th>
+              <th style="text-align:left; padding:10px 8px;">状态</th>
+              <th style="text-align:left; padding:10px 8px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tasks-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js"></script>
+  <script>
+    const state = { items: [] };
+
+    function triggerLabel(value) {
+      return ({ web: "网页端", telegram: "Telegram Bot", feishu: "飞书 Bot" })[value] || value || "-";
+    }
+
+    function sourceLabel(value) {
+      return ({ wechat: "微信公众号", zhihu: "知乎", web: "普通网页" })[value] || value || "-";
+    }
+
+    function statusLabel(value) {
+      return ({ queued: "排队中", running: "处理中", success: "成功", error: "失败" })[value] || value || "-";
+    }
+
+    function renderRows(items) {
+      const body = document.getElementById("tasks-table-body");
+      const empty = document.getElementById("tasks-empty");
+      body.innerHTML = "";
+      empty.style.display = items.length ? "none" : "block";
+      items.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td style="padding:10px 8px;"><input type="checkbox" class="task-selector" value="${AdminUI.escapeHtml(item.task_id)}"></td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.created_at || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(triggerLabel(item.trigger_channel))}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(sourceLabel(item.source_type))}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.note_title || "-")}</td>
+          <td style="padding:10px 8px;"><a href="${AdminUI.escapeHtml(item.source_url || "#")}" target="_blank" rel="noreferrer">查看链接</a></td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(statusLabel(item.status))}</td>
+          <td style="padding:10px 8px;">${item.status === "error" ? `<button class="btn btn-ghost rerun-single" data-task-id="${AdminUI.escapeHtml(item.task_id)}">重新转换</button>` : "-"}</td>
+        `;
+        body.appendChild(row);
+      });
+
+      document.querySelectorAll(".rerun-single").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const taskId = button.getAttribute("data-task-id");
+          const response = await fetch(`/api/tasks/${taskId}/rerun`, { method: "POST" });
+          const payload = await response.json();
+          if (!response.ok) {
+            AdminUI.toast(payload.detail || "重跑失败", "error");
+            return;
+          }
+          AdminUI.toast("任务已重新加入队列", "success");
+          await loadTasks();
+        });
+      });
+    }
+
+    async function loadTasks() {
+      const params = new URLSearchParams();
+      const triggerChannel = document.getElementById("filter-trigger-channel").value;
+      const sourceType = document.getElementById("filter-source-type").value;
+      const status = document.getElementById("filter-status").value;
+      if (triggerChannel) params.set("trigger_channel", triggerChannel);
+      if (sourceType) params.set("source_type", sourceType);
+      if (status) params.set("status", status);
+      params.set("limit", "50");
+
+      const response = await fetch(`/api/tasks?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        AdminUI.setHtml("tasks-result-area", AdminUI.resultHtml({
+          title: "任务列表加载失败",
+          tone: "error",
+          description: payload.detail || "请稍后重试。",
+          json: payload,
+        }));
+        return;
+      }
+
+      state.items = payload.items || [];
+      AdminUI.setHtml("tasks-result-area", "");
+      renderRows(state.items);
+    }
+
+    document.getElementById("refresh-tasks").addEventListener("click", loadTasks);
+    document.getElementById("filter-trigger-channel").addEventListener("change", loadTasks);
+    document.getElementById("filter-source-type").addEventListener("change", loadTasks);
+    document.getElementById("filter-status").addEventListener("change", loadTasks);
+    document.getElementById("rerun-selected").addEventListener("click", async () => {
+      const taskIds = Array.from(document.querySelectorAll(".task-selector:checked")).map((node) => node.value);
+      if (!taskIds.length) {
+        AdminUI.toast("请先选择至少一条任务", "warn");
+        return;
+      }
+      const response = await fetch("/api/tasks/rerun", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_ids: taskIds }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        AdminUI.toast(payload.detail || "批量重跑失败", "error");
+        return;
+      }
+      AdminUI.toast(`已提交 ${payload.accepted || 0} 条任务`, "success");
+      await loadTasks();
+    });
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await fetch("/api/session", { method: "DELETE" });
+      window.location.href = "/login";
+    });
+
+    loadTasks();
+  </script>
+</body>
+</html>

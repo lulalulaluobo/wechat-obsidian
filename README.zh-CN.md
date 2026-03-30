@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个本地运行的 FastAPI 服务，用于把微信公众号文章转换为 Markdown，并同步到面向 Obsidian 的 Fast Note Sync。
+一个本地运行的 FastAPI 服务，用于把微信公众号和普通网页长文本链接转换为 Markdown，并同步到面向 Obsidian 的 Fast Note Sync。
 
 ## 运行方式
 
@@ -18,6 +18,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8765
 - 主页面：`http://127.0.0.1:8765/` 或 `http://<your-lan-ip>:8765/`
 - 登录页：内置单账号登录
 - 设置页：`http://127.0.0.1:8765/settings` 或 `http://<your-lan-ip>:8765/settings`
+- 任务历史页：`http://127.0.0.1:8765/tasks` 或 `http://<your-lan-ip>:8765/tasks`
 
 ## Docker
 
@@ -90,6 +91,7 @@ docker compose -f docker-compose.prod.yml logs -f
 - 图片模式：`wechat_hotlink`
 - 运行时配置路径：`data/runtime-config.json`
 - 内部工作目录根路径：`data/workdir/`
+- 任务历史路径：`data/task-history.jsonl`
 
 可选环境变量：
 
@@ -133,6 +135,22 @@ docker compose -f docker-compose.prod.yml logs -f
   - 可选的 `content_polished` 正文
 - 正文润色默认关闭，并且单篇/批量都支持单次覆盖。
 - 设置页支持从 Clipper JSON 文件导入模板，并映射到当前解释器模板字段。
+- 任务历史页支持按触发方式、输入源和状态查看最近任务。
+- 失败任务支持单条重新转换，也支持勾选后批量重跑。
+- 任务历史与运行时配置分离，历史数据单独持久化到 `task-history.jsonl`。
+
+## 任务历史
+
+- `/tasks` 提供独立的任务历史页。
+- 每条记录包含：
+  - 触发时间
+  - 触发方式（网页端 / Telegram / 飞书）
+  - 输入源类型（微信公众号 / 普通网页）
+  - 任务笔记名称
+  - 源文链接
+  - 执行状态
+- 失败任务可直接重新转换。
+- 勾选多条任务后可批量重跑，无需重新转发或重新粘贴链接。
 
 ## AI 润色
 
@@ -178,7 +196,8 @@ docker compose -f docker-compose.prod.yml logs -f
 - 已支持 Telegram Bot webhook 单篇转换。
 - 已支持飞书 Bot webhook 单篇转换。
 - 两类 Bot 入口都会：
-  - 每条消息只接受一条公众号文章链接
+  - 每条消息只接受一条链接
+  - 支持公众号和普通网页链接
   - 先回执“已接收，开始转换”
   - 异步执行转换
   - 完成后回执标题、同步路径和图片模式

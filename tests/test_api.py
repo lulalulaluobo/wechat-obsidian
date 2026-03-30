@@ -23,6 +23,7 @@ from app.services import (  # noqa: E402
     process_feishu_convert_task,
     process_telegram_convert_task,
 )
+from app.task_history import TaskHistoryStore  # noqa: E402
 
 
 class ApiTests(unittest.TestCase):
@@ -98,6 +99,14 @@ class ApiTests(unittest.TestCase):
         self.assertIn('document.getElementById("batch-urls").value = "";', response.text)
         self.assertIn('fileInput.value = "";', response.text)
 
+    def test_tasks_page_renders_after_login(self):
+        self._login()
+        response = self.client.get("/tasks")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("任务历史", response.text)
+        self.assertIn("重跑选中任务", response.text)
+
     def test_wrong_password_is_rejected(self):
         response = self._login(password="wrong-password")
 
@@ -136,6 +145,32 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "success")
         self.assertEqual(response.json()["result"]["title"], "示例")
+
+    def test_convert_response_includes_task_metadata(self):
+        self._login()
+        fake_result = {
+            "status": "success",
+            "task_id": "task-1",
+            "source_type": "web",
+            "output_target": "local",
+            "result": {"title": "网页示例", "markdown_file": r"D:\obsidian\00_Inbox\01_网页示例\网页示例.md"},
+            "sync": {"status": "success", "target": "local", "markdown_file": r"D:\obsidian\00_Inbox\01_网页示例\网页示例.md"},
+            "local_artifacts": {"retained": False, "workdir": None},
+        }
+        with patch("app.api.routes.execute_single_conversion", return_value=fake_result):
+            response = self.client.post("/api/convert", json={"url": "https://example.com/post"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["task_id"], "task-1")
+        self.assertEqual(response.json()["source_type"], "web")
+
+    def test_convert_rejects_zhihu_link(self):
+        self._login()
+
+        response = self.client.post("/api/convert", json={"url": "https://zhuanlan.zhihu.com/p/123456"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("知乎链接暂不支持", response.json()["detail"])
 
     def test_convert_passes_ai_override(self):
         self._login()
@@ -358,6 +393,92 @@ class ApiTests(unittest.TestCase):
             "https://mp.weixin.qq.com/s?__biz=MzA4OTU3NzQ2OA==&mid=2661544116&idx=1&sn=abcd1234",
         )
         self.assertEqual(url_count, 1)
+
+    def test_parse_links_accepts_generic_urls(self):
+        links = parse_links(
+            urls_text="""
+            https://mp.weixin.qq.com/s/example
+            https://example.com/post?a=1
+            """
+        )
+
+        self.assertEqual(
+            links,
+            [
+                "https://mp.weixin.qq.com/s/example",
+                "https://example.com/post?a=1",
+            ],
+        )
+
+    def test_extract_single_wechat_url_accepts_generic_web_link(self):
+        url, url_count = extract_single_wechat_url("请处理 https://example.com/post?a=1")
+
+        self.assertEqual(url, "https://example.com/post?a=1")
+        self.assertEqual(url_count, 1)
+
+    def test_tasks_api_lists_history_records(self):
+        self._login()
+        store = TaskHistoryStore(Path(self.temp_dir.name) / "task-history.jsonl")
+        first = store.create_task(
+            trigger_channel="web",
+            source_type="wechat",
+            source_url="https://mp.weixin.qq.com/s/example",
+        )
+        store.update_task(first["task_id"], status="success", note_title="微信笔记")
+        second = store.create_task(
+            trigger_channel="telegram",
+            source_type="web",
+            source_url="https://example.com/error",
+        )
+        store.update_task(second["task_id"], status="error", error_message="boom")
+
+        response = self.client.get("/api/tasks?source_type=web&status=error")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["task_id"], second["task_id"])
+        self.assertEqual(payload["items"][0]["source_type"], "web")
+
+    def test_single_rerun_api_accepts_existing_task(self):
+        self._login()
+        store = TaskHistoryStore(Path(self.temp_dir.name) / "task-history.jsonl")
+        task = store.create_task(
+            trigger_channel="web",
+            source_type="web",
+            source_url="https://example.com/post",
+        )
+
+        with patch(
+            "app.api.routes.submit_rerun_task",
+            return_value={"task_id": "rerun-1", "rerun_of_task_id": task["task_id"]},
+        ) as mocked:
+            response = self.client.post(f"/api/tasks/{task['task_id']}/rerun")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "accepted")
+        self.assertEqual(response.json()["task_id"], "rerun-1")
+        mocked.assert_called_once_with(task["task_id"])
+
+    def test_batch_rerun_api_accepts_selected_tasks(self):
+        self._login()
+
+        with patch(
+            "app.api.routes.submit_rerun_tasks",
+            return_value={
+                "accepted": 2,
+                "items": [
+                    {"task_id": "rerun-1", "rerun_of_task_id": "task-1"},
+                    {"task_id": "rerun-2", "rerun_of_task_id": "task-2"},
+                ],
+            },
+        ) as mocked:
+            response = self.client.post("/api/tasks/rerun", json={"task_ids": ["task-1", "task-2"]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "accepted")
+        self.assertEqual(response.json()["accepted"], 2)
+        mocked.assert_called_once_with(["task-1", "task-2"])
 
     def test_batch_uses_internal_workdir_root_for_fns(self):
         self._login()
@@ -610,6 +731,37 @@ class ApiTests(unittest.TestCase):
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once()
 
+    def test_telegram_webhook_accepts_generic_web_link(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "success", "message": "registered", "webhook_url": "https://app.example.com/api/integrations/telegram/webhook"}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "obsidian",
+                    "telegram_enabled": True,
+                    "telegram_bot_token": "telegram-token",
+                    "telegram_webhook_public_base_url": "https://app.example.com",
+                    "telegram_webhook_secret": "secret-123",
+                    "telegram_allowed_chat_ids": "123456",
+                    "telegram_notify_on_complete": True,
+                },
+            )
+
+        with patch("app.api.routes.send_telegram_message") as mocked_send:
+            with patch("app.api.routes.submit_telegram_convert_task") as mocked_submit:
+                response = self.client.post(
+                    "/api/integrations/telegram/webhook",
+                    headers={"X-Telegram-Bot-Api-Secret-Token": "secret-123"},
+                    json={"message": {"chat": {"id": 123456}, "text": "https://example.com/post"}},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "accepted")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with("https://example.com/post", "123456")
+
     def test_telegram_webhook_ignores_duplicate_message(self):
         self._login()
         with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "success", "message": "registered", "webhook_url": "https://app.example.com/api/integrations/telegram/webhook"}):
@@ -843,6 +995,50 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "accepted")
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "ou_123")
+
+    def test_feishu_webhook_rejects_zhihu_link(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_verification_token": "verify-token",
+                    "feishu_encrypt_key": "encrypt-key",
+                    "feishu_webhook_public_base_url": "https://app.example.com",
+                    "feishu_allowed_open_ids": "ou_123",
+                    "feishu_notify_on_complete": True,
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        with patch("app.api.routes.send_feishu_message") as mocked_send:
+            with patch("app.api.routes.submit_feishu_convert_task") as mocked_submit:
+                response = self.client.post(
+                    "/api/integrations/feishu/webhook",
+                    json={
+                        "schema": "2.0",
+                        "header": {"event_type": "im.message.receive_v1"},
+                        "event": {
+                            "message": {
+                                "message_type": "text",
+                                "chat_type": "p2p",
+                                "content": "{\"text\":\"https://zhuanlan.zhihu.com/p/123456\"}",
+                            },
+                            "sender": {"sender_id": {"open_id": "ou_123"}},
+                        },
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "replied")
+        self.assertEqual(response.json()["reason"], "no_link")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_not_called()
 
     def test_feishu_webhook_ignores_duplicate_message(self):
         self._login()

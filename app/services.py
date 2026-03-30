@@ -15,13 +15,17 @@ import requests
 
 from app.ai_adapters import extract_completion_preview, request_ai_completion, validate_provider_model
 from app.ai_polish import apply_ai_polish_to_markdown
+from app.content_sources import detect_source_type, extract_candidate_urls, fetch_article_from_url
 from app.config import get_settings, update_feishu_webhook_state, update_telegram_webhook_state
-from app.core.pipeline import run_pipeline, sanitize_filename
+from app.core.pipeline import run_article_pipeline, run_pipeline, sanitize_filename
+from app.task_history import TaskHistoryStore
 
 
 URL_PATTERN = re.compile(r"https?://mp\.weixin\.qq\.com/s(?:[/?][^\s)>]+)?", re.IGNORECASE)
 TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 FEISHU_TENANT_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+_task_history_store_lock = threading.Lock()
+_task_history_store_cache: dict[str, TaskHistoryStore] = {}
 
 
 def get_internal_workdir_root() -> Path:
@@ -43,6 +47,22 @@ def cleanup_internal_workdir(path: Path | None) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
+def get_task_history_path() -> Path:
+    settings = get_settings()
+    return (settings.runtime_config_path.parent / "task-history.jsonl").resolve()
+
+
+def get_task_history_store() -> TaskHistoryStore:
+    path = get_task_history_path()
+    cache_key = str(path)
+    with _task_history_store_lock:
+        store = _task_history_store_cache.get(cache_key)
+        if store is None:
+            store = TaskHistoryStore(path)
+            _task_history_store_cache[cache_key] = store
+        return store
+
+
 class JobStore:
     def __init__(self) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
@@ -58,6 +78,7 @@ class JobStore:
         output_target: str,
         ai_enabled: bool | None = None,
         require_ai_success: bool = False,
+        task_items: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         job_id = uuid.uuid4().hex
         payload = {
@@ -81,7 +102,7 @@ class JobStore:
         self._executor.submit(
             self._run_batch_job,
             job_id,
-            urls,
+            task_items or [{"url": url, "task_id": ""} for url in urls],
             output_dir,
             save_html,
             timeout,
@@ -99,7 +120,7 @@ class JobStore:
     def _run_batch_job(
         self,
         job_id: str,
-        urls: list[str],
+        task_items: list[dict[str, Any]],
         output_dir: Path,
         save_html: bool,
         timeout: int,
@@ -109,7 +130,9 @@ class JobStore:
     ) -> None:
         ensure_runtime_environment()
         self._update(job_id, status="running")
-        for url in urls:
+        for item in task_items:
+            url = str(item.get("url") or "").strip()
+            task_id = str(item.get("task_id") or "").strip() or None
             try:
                 conversion = _run_single_conversion(
                     url=url,
@@ -120,17 +143,28 @@ class JobStore:
                     require_ai_success=require_ai_success,
                     batch_workspace_root=output_dir if output_target != "fns" else None,
                     workspace_prefix=f"batch-{job_id[:8]}",
+                    task_id=task_id,
+                    trigger_channel="web",
                 )
                 self._append_result(
                     job_id,
                     {
                         "url": url,
+                        "task_id": conversion.get("task_id"),
                         "status": "success",
                         **conversion,
                     },
                 )
             except Exception as error:  # pragma: no cover - exercised in integration flow
-                self._append_result(job_id, {"url": url, "status": "error", "error": str(error)})
+                self._append_result(
+                    job_id,
+                    {
+                        "url": url,
+                        "task_id": task_id,
+                        "status": "error",
+                        "error": str(error),
+                    },
+                )
         self._finalize(job_id)
 
     def _append_result(self, job_id: str, entry: dict[str, Any]) -> None:
@@ -166,6 +200,9 @@ def execute_single_conversion(
     output_target: str | None = None,
     ai_enabled: bool | None = None,
     require_ai_success: bool = False,
+    trigger_channel: str = "web",
+    rerun_of_task_id: str | None = None,
+    task_id: str | None = None,
 ) -> dict[str, Any]:
     return _run_single_conversion(
         url=url,
@@ -175,6 +212,9 @@ def execute_single_conversion(
         ai_enabled=ai_enabled,
         require_ai_success=require_ai_success,
         workspace_prefix="single",
+        task_id=task_id,
+        trigger_channel=trigger_channel,
+        rerun_of_task_id=rerun_of_task_id,
     )
 
 
@@ -188,12 +228,27 @@ def _run_single_conversion(
     require_ai_success: bool = False,
     batch_workspace_root: Path | None = None,
     workspace_prefix: str = "single",
+    task_id: str | None = None,
+    trigger_channel: str = "web",
+    rerun_of_task_id: str | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     normalized_target = build_output_target(output_target, settings)
     normalized_timeout = int(timeout or settings.default_timeout)
     normalized_ai_enabled = resolve_ai_enabled(ai_enabled, settings)
     ensure_runtime_environment()
+    source_type = detect_source_type(url)
+    task_store = get_task_history_store()
+    task_record = task_store.get_task(task_id) if task_id else None
+    if task_record is None:
+        task_record = task_store.create_task(
+            trigger_channel=trigger_channel,
+            source_type=source_type,
+            source_url=url,
+            rerun_of_task_id=rerun_of_task_id,
+        )
+        task_id = str(task_record["task_id"])
+    task_store.update_task(task_id, status="running", source_type=source_type, source_url=url)
 
     workspace: Path | None = None
     output_dir = batch_workspace_root or normalize_output_dir(None)
@@ -202,12 +257,26 @@ def _run_single_conversion(
         output_dir = workspace
 
     try:
-        result = run_pipeline(
-            url=url,
-            output_base_dir=output_dir,
-            save_html=save_html,
-            timeout=normalized_timeout,
-        )
+        if source_type == "wechat":
+            result = run_pipeline(
+                url=url,
+                output_base_dir=output_dir,
+                save_html=save_html,
+                timeout=normalized_timeout,
+            )
+        else:
+            resolved_source_type, article, source_html = fetch_article_from_url(
+                url,
+                timeout=normalized_timeout,
+            )
+            result = run_article_pipeline(
+                article=article,
+                output_base_dir=output_dir,
+                save_html=save_html,
+                timeout=normalized_timeout,
+                source_html=source_html,
+            )
+            source_type = resolved_source_type
         result.setdefault("image_mode", settings.image_mode)
         ai_polish = {
             "enabled": normalized_ai_enabled,
@@ -243,12 +312,29 @@ def _run_single_conversion(
                 cleanup_internal_workdir(workspace)
             else:
                 local_artifacts = {"retained": True, "workdir": str(workspace)}
-    except Exception:
+        task_store.update_task(
+            task_id,
+            status="success",
+            source_type=source_type,
+            note_title=str(result.get("title") or ""),
+            sync_path=str(sync.get("path") or sync.get("markdown_file") or ""),
+            error_message="",
+        )
+    except Exception as error:
+        if task_id:
+            task_store.update_task(
+                task_id,
+                status="error",
+                source_type=source_type,
+                error_message=str(error),
+            )
         cleanup_internal_workdir(workspace)
         raise
 
     return {
         "status": "success",
+        "task_id": task_id,
+        "source_type": source_type,
         "output_target": normalized_target,
         "result": result,
         "sync": sync,
@@ -276,20 +362,75 @@ def parse_links(urls: list[str] | None = None, urls_text: str | None = None, fil
         if source:
             raw_values.append(source.strip())
     for blob in (urls_text or "", file_text or ""):
-        raw_values.extend(URL_PATTERN.findall(blob))
-        raw_values.extend(
-            line.strip()
-            for line in blob.splitlines()
-            if line.strip().startswith(("http://", "https://"))
-        )
+        raw_values.extend(extract_candidate_urls(blob))
 
     deduped: list[str] = []
     seen: set[str] = set()
     for item in raw_values:
+        try:
+            detect_source_type(item)
+        except ValueError:
+            continue
         if item not in seen:
             deduped.append(item)
             seen.add(item)
     return deduped
+
+
+def list_tasks(
+    *,
+    trigger_channel: str | None = None,
+    source_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    return get_task_history_store().list_tasks(
+        trigger_channel=trigger_channel,
+        source_type=source_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def get_task(task_id: str) -> dict[str, Any] | None:
+    return get_task_history_store().get_task(task_id)
+
+
+def submit_rerun_task(task_id: str) -> dict[str, Any]:
+    original = get_task_history_store().get_task(task_id)
+    if original is None:
+        raise KeyError(f"任务不存在: {task_id}")
+    url = str(original.get("source_url") or "").strip()
+    trigger_channel = str(original.get("trigger_channel") or "web").strip() or "web"
+    rerun_task = get_task_history_store().create_task(
+        trigger_channel=trigger_channel,
+        source_type=str(original.get("source_type") or detect_source_type(url)),
+        source_url=url,
+        rerun_of_task_id=task_id,
+    )
+    _rerun_executor.submit(
+        _run_single_conversion,
+        url=url,
+        timeout=get_settings().default_timeout,
+        save_html=False,
+        output_target="fns" if get_settings().fns_enabled else "local",
+        ai_enabled=None,
+        require_ai_success=True,
+        workspace_prefix="rerun",
+        task_id=str(rerun_task["task_id"]),
+        trigger_channel=trigger_channel,
+        rerun_of_task_id=task_id,
+    )
+    return {"task_id": str(rerun_task["task_id"]), "rerun_of_task_id": task_id}
+
+
+def submit_rerun_tasks(task_ids: list[str]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for task_id in task_ids:
+        items.append(submit_rerun_task(str(task_id)))
+    return {"accepted": len(items), "items": items}
 
 
 def read_uploaded_text(content: bytes) -> str:
@@ -641,10 +782,15 @@ def send_telegram_message(chat_id: str, text: str, http_session=None) -> dict[st
 
 
 def submit_telegram_convert_task(url: str, chat_id: str) -> None:
-    _telegram_executor.submit(process_telegram_convert_task, url, chat_id)
+    task = get_task_history_store().create_task(
+        trigger_channel="telegram",
+        source_type=detect_source_type(url),
+        source_url=url,
+    )
+    _telegram_executor.submit(process_telegram_convert_task, url, chat_id, str(task["task_id"]))
 
 
-def process_telegram_convert_task(url: str, chat_id: str) -> None:
+def process_telegram_convert_task(url: str, chat_id: str, task_id: str | None = None) -> None:
     settings = get_settings()
     try:
         payload = execute_single_conversion(
@@ -653,6 +799,9 @@ def process_telegram_convert_task(url: str, chat_id: str) -> None:
             save_html=False,
             output_target="fns",
             require_ai_success=True,
+            trigger_channel="telegram",
+            rerun_of_task_id=None,
+            task_id=task_id,
         )
     except Exception as error:
         print(f"[telegram] conversion failed chat_id={chat_id}: {error}")
@@ -756,10 +905,15 @@ def get_feishu_tenant_access_token(http_session=None) -> str:
 
 
 def submit_feishu_convert_task(url: str, open_id: str) -> None:
-    _feishu_executor.submit(process_feishu_convert_task, url, open_id)
+    task = get_task_history_store().create_task(
+        trigger_channel="feishu",
+        source_type=detect_source_type(url),
+        source_url=url,
+    )
+    _feishu_executor.submit(process_feishu_convert_task, url, open_id, str(task["task_id"]))
 
 
-def process_feishu_convert_task(url: str, open_id: str) -> None:
+def process_feishu_convert_task(url: str, open_id: str, task_id: str | None = None) -> None:
     settings = get_settings()
     try:
         payload = execute_single_conversion(
@@ -768,6 +922,9 @@ def process_feishu_convert_task(url: str, open_id: str) -> None:
             save_html=False,
             output_target="fns",
             require_ai_success=True,
+            trigger_channel="feishu",
+            rerun_of_task_id=None,
+            task_id=task_id,
         )
     except Exception as error:
         print(f"[feishu] conversion failed open_id={open_id}: {error}")
@@ -813,7 +970,7 @@ def process_feishu_convert_task(url: str, open_id: str) -> None:
 
 
 def extract_single_wechat_url(text: str) -> tuple[str | None, int]:
-    links = URL_PATTERN.findall(text or "")
+    links = parse_links(urls_text=text or "")
     if not links:
         return None, 0
     unique_links: list[str] = []
@@ -907,4 +1064,5 @@ def _copy_job(job: dict[str, Any]) -> dict[str, Any]:
 job_store = JobStore()
 _telegram_executor = ThreadPoolExecutor(max_workers=2)
 _feishu_executor = ThreadPoolExecutor(max_workers=2)
+_rerun_executor = ThreadPoolExecutor(max_workers=2)
 _feishu_token_cache: dict[str, dict[str, Any]] = {}

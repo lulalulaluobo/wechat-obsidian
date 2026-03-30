@@ -37,17 +37,23 @@ from app.services import (
     extract_single_wechat_url,
     ensure_runtime_environment,
     get_internal_workdir_root,
+    get_task,
+    get_task_history_store,
     job_store,
+    list_tasks,
     normalize_output_dir,
     parse_links,
     read_uploaded_text,
     send_feishu_message,
     send_telegram_message,
     submit_feishu_convert_task,
+    submit_rerun_task,
+    submit_rerun_tasks,
     submit_telegram_convert_task,
     test_ai_connectivity,
     TELEGRAM_SECRET_HEADER,
 )
+from app.content_sources import detect_source_type
 
 
 router = APIRouter()
@@ -112,7 +118,7 @@ async def convert_article(
     payload = await _read_convert_payload(request)
     url = str(payload.get("url") or "").strip()
     if not url:
-        raise HTTPException(status_code=400, detail="缺少微信文章链接 url")
+        raise HTTPException(status_code=400, detail="缺少文章链接 url")
 
     try:
         return execute_single_conversion(
@@ -141,12 +147,25 @@ async def convert_batch(
         file_text=payload.get("file_text"),
     )
     if not urls:
-        raise HTTPException(status_code=400, detail="未解析到可用的微信文章链接")
+        raise HTTPException(status_code=400, detail="未解析到可用的文章链接")
 
     timeout = int(payload.get("timeout") or get_settings().default_timeout)
     save_html = _parse_bool(payload.get("save_html"))
     output_target = build_output_target(payload.get("output_target"))
     output_dir = get_internal_workdir_root() if output_target == "fns" else normalize_output_dir(payload.get("output_dir"))
+
+    task_store = get_task_history_store()
+    task_items = [
+        {
+            "url": url,
+            "task_id": task_store.create_task(
+                trigger_channel="web",
+                source_type=detect_source_type(url),
+                source_url=url,
+            )["task_id"],
+        }
+        for url in urls
+    ]
 
     job = job_store.create_batch_job(
         urls=urls,
@@ -156,6 +175,7 @@ async def convert_batch(
         output_target=output_target,
         ai_enabled=_read_optional_bool(payload.get("ai_enabled")),
         require_ai_success=True,
+        task_items=task_items,
     )
     return {
         "status": "queued",
@@ -177,6 +197,60 @@ async def get_job(
     if job is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     return job
+
+
+@router.get("/api/tasks")
+async def get_tasks(
+    trigger_channel: str | None = None,
+    source_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    try:
+        return list_tasks(
+            trigger_channel=trigger_channel,
+            source_type=source_type,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/api/tasks/{task_id}/rerun")
+async def rerun_task(
+    task_id: str,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    if get_task(task_id) is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    try:
+        payload = submit_rerun_task(task_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"status": "accepted", **payload}
+
+
+@router.post("/api/tasks/rerun")
+async def rerun_tasks(
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    task_ids = payload.get("task_ids")
+    if not isinstance(task_ids, list) or not task_ids:
+        raise HTTPException(status_code=400, detail="task_ids 不能为空")
+    try:
+        result = submit_rerun_tasks([str(item) for item in task_ids if str(item).strip()])
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"status": "accepted", **result}
 
 
 @router.post("/api/session")
@@ -390,10 +464,10 @@ async def telegram_webhook(
     text = str(message.get("text") or "").strip()
     url, url_count = extract_single_wechat_url(text)
     if url_count == 0 or not url:
-        send_telegram_message(chat_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
+        send_telegram_message(chat_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
         return {"status": "replied", "reason": "no_link"}
     if url_count > 1:
-        send_telegram_message(chat_id, "一次只支持一篇文章，请只发送一条微信文章链接。")
+        send_telegram_message(chat_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
         return {"status": "replied", "reason": "multiple_links"}
     if not settings.fns_enabled:
         send_telegram_message(chat_id, "当前 FNS 尚未配置完成，无法执行 Telegram 单篇转换。")
@@ -445,10 +519,10 @@ async def feishu_webhook(
         f"url_found={bool(url)} event_key={event_key or '-'}"
     )
     if url_count == 0 or not url:
-        _safe_send_feishu_message(open_id, "未识别到可用的微信文章链接，请直接发送一条公众号文章链接。")
+        _safe_send_feishu_message(open_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
         return {"status": "replied", "reason": "no_link"}
     if url_count > 1:
-        _safe_send_feishu_message(open_id, "一次只支持一篇文章，请只发送一条微信文章链接。")
+        _safe_send_feishu_message(open_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
         return {"status": "replied", "reason": "multiple_links"}
     if not settings.fns_enabled:
         _safe_send_feishu_message(open_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
