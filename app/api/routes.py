@@ -121,6 +121,7 @@ async def convert_article(
             save_html=_parse_bool(payload.get("save_html")),
             output_target=payload.get("output_target"),
             ai_enabled=_read_optional_bool(payload.get("ai_enabled")),
+            require_ai_success=True,
         )
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -154,6 +155,7 @@ async def convert_batch(
         timeout=timeout,
         output_target=output_target,
         ai_enabled=_read_optional_bool(payload.get("ai_enabled")),
+        require_ai_success=True,
     )
     return {
         "status": "queued",

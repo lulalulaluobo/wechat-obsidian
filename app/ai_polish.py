@@ -8,7 +8,7 @@ from typing import Any
 
 import requests
 
-from app.ai_adapters import extract_completion_preview, extract_completion_text, request_ai_completion, validate_provider_model
+from app.ai_adapters import extract_completion_text, request_ai_completion, validate_provider_model
 
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
@@ -68,7 +68,7 @@ def request_interpreter_variables(
         http_session=http_session,
         temperature=0.2,
     )
-    content_text = extract_completion_preview(payload, provider_type=str(resolved_provider.get("type") or "openai_compatible"))
+    content_text = extract_completion_text(payload, provider_type=str(resolved_provider.get("type") or "openai_compatible"))
     if not content_text:
         raise RuntimeError("AI 返回内容为空")
     return _parse_json_response(content_text)

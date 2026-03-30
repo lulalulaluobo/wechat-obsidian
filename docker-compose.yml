@@ -2,6 +2,7 @@ services:
   wechat-md-server:
     image: your-namespace/wechat-md-server:latest
     container_name: wechat-md-server
+    user: "0:0"
     restart: unless-stopped
     environment:
       WECHAT_MD_APP_MASTER_KEY: "replace-with-your-master-key"

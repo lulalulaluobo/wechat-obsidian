@@ -14,6 +14,7 @@ from app.ai_polish import (
     apply_ai_polish_to_markdown,
     build_prompt_from_variable_prompts,
     extract_prompt_variables_from_templates,
+    request_interpreter_variables,
     render_template,
 )  # noqa: E402
 from app.services import execute_single_conversion  # noqa: E402
@@ -103,6 +104,34 @@ class AIPolishTests(unittest.TestCase):
         self.assertEqual(payload["ai_polish"]["status"], "failed")
         self.assertEqual(payload["ai_polish"]["enabled"], True)
         self.assertIn("ai failed", payload["ai_polish"]["message"])
+
+    def test_request_interpreter_variables_parses_full_json_without_preview_truncation(self):
+        long_summary = "很长的总结" * 80
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"summary": "'
+                            + long_summary
+                            + '", "tags": ["AI", "微信", "Obsidian"], "clipper_block_1": "- 要点一\\n- 要点二"}'
+                        )
+                    }
+                }
+            ]
+        }
+
+        with patch("app.ai_polish.request_ai_completion", return_value=payload):
+            interpreted = request_interpreter_variables(
+                ai_base_url="https://api.example.com/v1",
+                ai_api_key="ai-key",
+                ai_model="gpt-5.4-mini",
+                prompt="请返回 JSON",
+            )
+
+        self.assertEqual(interpreted["summary"], long_summary)
+        self.assertEqual(interpreted["tags"], ["AI", "微信", "Obsidian"])
+        self.assertIn("要点一", interpreted["clipper_block_1"])
 
     def test_execute_single_conversion_raises_without_sync_when_ai_is_required_for_bot(self):
         markdown_path = Path(self.temp_dir.name) / "article-required.md"

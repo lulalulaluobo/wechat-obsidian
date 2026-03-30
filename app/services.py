@@ -57,6 +57,7 @@ class JobStore:
         timeout: int,
         output_target: str,
         ai_enabled: bool | None = None,
+        require_ai_success: bool = False,
     ) -> dict[str, Any]:
         job_id = uuid.uuid4().hex
         payload = {
@@ -71,12 +72,23 @@ class JobStore:
             "timeout": timeout,
             "output_target": output_target,
             "ai_enabled": bool(ai_enabled),
+            "require_ai_success": bool(require_ai_success),
             "results": [],
             "errors": [],
         }
         with self._lock:
             self._jobs[job_id] = payload
-        self._executor.submit(self._run_batch_job, job_id, urls, output_dir, save_html, timeout, output_target, ai_enabled)
+        self._executor.submit(
+            self._run_batch_job,
+            job_id,
+            urls,
+            output_dir,
+            save_html,
+            timeout,
+            output_target,
+            ai_enabled,
+            require_ai_success,
+        )
         return payload.copy()
 
     def get_job(self, job_id: str) -> dict[str, Any] | None:
@@ -93,6 +105,7 @@ class JobStore:
         timeout: int,
         output_target: str,
         ai_enabled: bool | None,
+        require_ai_success: bool,
     ) -> None:
         ensure_runtime_environment()
         self._update(job_id, status="running")
@@ -104,6 +117,7 @@ class JobStore:
                     save_html=save_html,
                     output_target=output_target,
                     ai_enabled=ai_enabled,
+                    require_ai_success=require_ai_success,
                     batch_workspace_root=output_dir if output_target != "fns" else None,
                     workspace_prefix=f"batch-{job_id[:8]}",
                 )

@@ -155,6 +155,7 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(mocked_execute.call_args.kwargs["ai_enabled"])
+        self.assertTrue(mocked_execute.call_args.kwargs["require_ai_success"])
 
     def test_login_cookie_uses_secure_flag_when_enabled(self):
         with patch.dict(os.environ, {"WECHAT_MD_SESSION_COOKIE_SECURE": "true"}, clear=False):
@@ -319,6 +320,7 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(mocked.call_args.kwargs["ai_enabled"])
+        self.assertTrue(mocked.call_args.kwargs["require_ai_success"])
 
     def test_batch_from_file(self):
         self._login()
