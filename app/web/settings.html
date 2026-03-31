@@ -1320,10 +1320,11 @@
         });
         const data = await res.json();
         if (res.ok) {
-          AdminUI.toast("密码已更新", "success");
+          AdminUI.toast("密码已更新，即将重新加载以应用新凭证", "success");
           document.getElementById("current-password").value = "";
           document.getElementById("new-password").value = "";
           AdminUI.setHtml("pw-result-area", AdminUI.resultHtml({ title: "密码修改成功", tone: "success", json: data }));
+          setTimeout(() => window.location.reload(), 1500);
         } else {
           AdminUI.toast("修改失败", "error");
           AdminUI.setHtml("pw-result-area", AdminUI.resultHtml({ title: "修改失败", tone: "error", description: data.detail, json: data }));
