@@ -365,6 +365,10 @@
         description: data.message || "请在微信中扫码并确认登录。",
         items: [{ label: "会话", value: sessionId }, { label: "状态", value: data.status || "-" }],
       }));
+      if (data.qrcode_url && data.status !== "confirmed") {
+        const image = `<div style="margin-top:12px;"><img alt="微信扫码登录二维码" src="${AdminUI.escapeHtml(data.qrcode_url)}" style="max-width:220px; border-radius:12px; border:1px solid var(--border);"></div>`;
+        document.getElementById("wechat-qr-result-area").insertAdjacentHTML("beforeend", image);
+      }
       if (data.status === "confirmed") {
         const confirmRes = await fetch(`/api/sync/login/qr/${sessionId}/confirm`, {
           method: "POST",

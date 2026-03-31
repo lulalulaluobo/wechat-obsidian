@@ -1056,16 +1056,60 @@ def _extract_cookie_value(set_cookie_header: str, name: str) -> str:
 
 def start_wechat_mp_qr_login(http_session=None) -> dict[str, Any]:
     session = http_session or requests.Session()
-    response = session.get(
-        "https://mp.weixin.qq.com/cgi-bin/scanloginqrcode",
-        params={"action": "getqrcode", "random": int(time.time() * 1000)},
-        timeout=max(get_settings().default_timeout, 20),
+    request_timeout = max(get_settings().default_timeout, 20)
+
+    # --- Step 1: call bizlogin?action=startlogin to create a login session ---
+    # This is the call that returns the `uuid` cookie in set-cookie.
+    # Reference: wechat-article-exporter server/api/web/login/session/[sid].post.ts
+    sid = f"{int(time.time() * 1000)}{random.randint(10, 99)}"
+    startlogin_response = session.post(
+        "https://mp.weixin.qq.com/cgi-bin/bizlogin",
+        params={"action": "startlogin"},
+        headers={
+            "Referer": "https://mp.weixin.qq.com/",
+            "Origin": "https://mp.weixin.qq.com",
+            "User-Agent": USER_AGENT,
+        },
+        data={
+            "userlang": "zh_CN",
+            "redirect_url": "",
+            "login_type": 3,
+            "sessionid": sid,
+            "token": "",
+            "lang": "zh_CN",
+            "f": "json",
+            "ajax": 1,
+        },
+        timeout=request_timeout,
     )
-    response.raise_for_status()
-    uuid_cookie = _extract_cookie_value(response.headers.get("set-cookie", ""), "uuid")
+    startlogin_response.raise_for_status()
+
+    # Extract uuid cookie – try response.cookies jar first (most reliable with requests lib),
+    # then fall back to raw set-cookie header parsing.
+    uuid_cookie = ""
+    if "uuid" in startlogin_response.cookies:
+        uuid_cookie = f"uuid={startlogin_response.cookies['uuid']}"
+    if not uuid_cookie:
+        uuid_cookie = _extract_cookie_value(
+            startlogin_response.headers.get("set-cookie", ""), "uuid"
+        )
     if not uuid_cookie:
         raise RuntimeError("未能从扫码响应中获取 uuid cookie")
-    image_b64 = base64.b64encode(response.content).decode("ascii") if response.content else ""
+
+    # --- Step 2: fetch the QR code image, passing the uuid cookie ---
+    qr_response = session.get(
+        "https://mp.weixin.qq.com/cgi-bin/scanloginqrcode",
+        params={"action": "getqrcode", "random": int(time.time() * 1000)},
+        headers={
+            "Cookie": uuid_cookie,
+            "Referer": "https://mp.weixin.qq.com/",
+            "User-Agent": USER_AGENT,
+        },
+        timeout=request_timeout,
+    )
+    qr_response.raise_for_status()
+
+    image_b64 = base64.b64encode(qr_response.content).decode("ascii") if qr_response.content else ""
     record = get_sync_store().create_wechat_mp_qr_session(
         qrcode_url=f"data:image/jpeg;base64,{image_b64}" if image_b64 else "",
         uuid_cookie=uuid_cookie,
@@ -1087,7 +1131,11 @@ def get_wechat_mp_qr_login_status(session_id: str, http_session=None) -> dict[st
     response = session.get(
         "https://mp.weixin.qq.com/cgi-bin/scanloginqrcode",
         params={"action": "ask", "token": "", "lang": "zh_CN", "f": "json", "ajax": 1},
-        headers={"Cookie": str(record.get("uuid_cookie") or ""), "User-Agent": USER_AGENT},
+        headers={
+            "Cookie": str(record.get("uuid_cookie") or ""),
+            "User-Agent": USER_AGENT,
+            "Referer": "https://mp.weixin.qq.com/",
+        },
         timeout=max(get_settings().default_timeout, 20),
     )
     response.raise_for_status()
@@ -1104,6 +1152,7 @@ def get_wechat_mp_qr_login_status(session_id: str, http_session=None) -> dict[st
         "session_id": session_id,
         "status": str(updated.get("status") or status) if updated else status,
         "message": str(payload.get("msg") or ""),
+        "qrcode_url": str(record.get("qrcode_url") or "") if record else "",
     }
 
 
@@ -1115,7 +1164,12 @@ def confirm_wechat_mp_qr_login(session_id: str, http_session=None) -> dict[str, 
     response = session.post(
         "https://mp.weixin.qq.com/cgi-bin/bizlogin",
         params={"action": "login"},
-        headers={"Cookie": str(record.get("uuid_cookie") or ""), "User-Agent": USER_AGENT},
+        headers={
+            "Cookie": str(record.get("uuid_cookie") or ""),
+            "User-Agent": USER_AGENT,
+            "Referer": "https://mp.weixin.qq.com/",
+            "Origin": "https://mp.weixin.qq.com",
+        },
         data={
             "userlang": "zh_CN",
             "redirect_url": "",
@@ -1132,21 +1186,32 @@ def confirm_wechat_mp_qr_login(session_id: str, http_session=None) -> dict[str, 
     )
     response.raise_for_status()
     payload = response.json()
+    print(f"[DEBUG confirm] Wechat response payload: {payload}", flush=True)
+    print(f"[DEBUG confirm] Wechat response headers: {response.headers}", flush=True)
+    print(f"[DEBUG confirm] Wechat response cookies: {response.cookies.get_dict()}", flush=True)
     redirect_url = str(payload.get("redirect_url") or payload.get("redirect_url_ext") or "")
     token = ""
     if redirect_url:
         token = requests.utils.urlparse(redirect_url).query
         token = next((part.split("=", 1)[1] for part in token.split("&") if part.startswith("token=")), "")
     if not token:
+        print("[DEBUG confirm] Missing token! redirect_url was:", redirect_url, flush=True)
         raise RuntimeError("扫码登录成功响应中缺少 token")
+    # Build cookie string – prefer response.cookies jar (works reliably with requests lib),
+    # fall back to raw set-cookie header parsing.
     raw_cookie = "; ".join(
-        [
-            part.split(";", 1)[0]
-            for part in response.headers.get("set-cookie", "").split(",")
-            if "=" in part
-        ]
+        f"{k}={v}" for k, v in response.cookies.items() if k and v
     ).strip()
     if not raw_cookie:
+        raw_cookie = "; ".join(
+            [
+                part.split(";", 1)[0]
+                for part in response.headers.get("set-cookie", "").split(",")
+                if "=" in part
+            ]
+        ).strip()
+    if not raw_cookie:
+        print("[DEBUG confirm] Missing cookie! response headers:", response.headers, flush=True)
         raise RuntimeError("扫码登录成功响应中缺少 cookie")
     save_wechat_mp_credentials(token, raw_cookie)
     updated = get_sync_store().update_wechat_mp_qr_session(
