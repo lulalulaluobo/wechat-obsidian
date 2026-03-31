@@ -38,7 +38,6 @@ from app.services import (
     confirm_wechat_mp_qr_login,
     configure_feishu_webhook_state,
     configure_telegram_webhook,
-    create_admin_user,
     create_sync_source,
     delete_sync_articles,
     delete_sync_source,
@@ -56,14 +55,12 @@ from app.services import (
     get_task,
     job_store,
     list_article_execution_history,
-    list_admin_users,
     list_tasks,
     list_sync_articles,
     list_sync_sources_payload,
     normalize_output_dir,
     parse_links,
     read_uploaded_text,
-    reset_admin_user_password,
     search_wechat_accounts,
     send_feishu_message,
     send_telegram_message,
@@ -78,7 +75,6 @@ from app.services import (
     sync_source_articles,
     test_ai_connectivity,
     TELEGRAM_SECRET_HEADER,
-    update_admin_user,
     update_scheduler_settings,
 )
 router = APIRouter()
@@ -330,73 +326,6 @@ async def delete_session(response: Response) -> dict[str, Any]:
     response.delete_cookie(SESSION_COOKIE_NAME, samesite="strict", secure=session_cookie_secure_enabled())
     response.delete_cookie(CSRF_COOKIE_NAME, samesite="strict", secure=session_cookie_secure_enabled())
     return {"status": "ok"}
-
-
-@router.get("/api/admin/users")
-async def get_admin_users(
-    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> dict[str, Any]:
-    _require_admin(session_cookie)
-    return list_admin_users()
-
-
-@router.post("/api/admin/users")
-async def post_admin_user(
-    request: Request,
-    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> dict[str, Any]:
-    actor = _require_admin(session_cookie)
-    _require_csrf(request, strict=True)
-    payload = await _read_convert_payload(request)
-    try:
-        return create_admin_user(
-            payload,
-            actor_user_id=str(actor.get("id") or ""),
-            ip_address=request.client.host if request.client else "",
-        )
-    except Exception as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
-
-@router.put("/api/admin/users/{user_id}")
-async def put_admin_user(
-    user_id: str,
-    request: Request,
-    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> dict[str, Any]:
-    actor = _require_admin(session_cookie)
-    _require_csrf(request, strict=True)
-    payload = await _read_convert_payload(request)
-    try:
-        return update_admin_user(
-            user_id,
-            payload,
-            actor_user_id=str(actor.get("id") or ""),
-            ip_address=request.client.host if request.client else "",
-        )
-    except Exception as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
-
-@router.post("/api/admin/users/{user_id}/password")
-async def post_admin_user_password(
-    user_id: str,
-    request: Request,
-    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> dict[str, Any]:
-    actor = _require_admin(session_cookie)
-    _require_csrf(request, strict=True)
-    payload = await _read_convert_payload(request)
-    try:
-        return reset_admin_user_password(
-            user_id,
-            str(payload.get("new_password") or ""),
-            actor_user_id=str(actor.get("id") or ""),
-            ip_address=request.client.host if request.client else "",
-        )
-    except Exception as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
 
 @router.get("/api/admin/schedules")
 async def get_admin_schedules(

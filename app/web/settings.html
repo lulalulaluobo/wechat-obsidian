@@ -430,59 +430,6 @@
         <div id="pw-result-area"></div>
       </div>
 
-      <div class="card">
-        <h2 class="card-title">用户管理</h2>
-        <p class="card-desc">管理员可创建账号、停用账号并重置密码。第一版不开放公开注册。</p>
-        <div id="users-access-note" class="text-sm text-muted" style="margin-bottom:12px;">仅管理员可用。</div>
-        <div id="users-panel" class="hidden">
-          <div class="field-row">
-            <div class="field">
-              <label for="new-user-username">用户名</label>
-              <input id="new-user-username" placeholder="operator-a">
-            </div>
-            <div class="field">
-              <label for="new-user-password">初始密码</label>
-              <input id="new-user-password" type="password" placeholder="输入初始密码">
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="new-user-display-name">显示名</label>
-              <input id="new-user-display-name" placeholder="操作员 A">
-            </div>
-            <div class="field">
-              <label for="new-user-role">角色</label>
-              <select id="new-user-role">
-                <option value="operator">operator</option>
-                <option value="admin">admin</option>
-              </select>
-            </div>
-          </div>
-          <div class="field">
-            <label for="new-user-note">备注</label>
-            <input id="new-user-note" placeholder="可选备注">
-          </div>
-          <div class="action-row">
-            <button id="create-user-btn" class="btn btn-primary">创建账号</button>
-          </div>
-          <div id="users-result-area"></div>
-          <div style="overflow:auto; margin-top:14px;">
-            <table style="width:100%; border-collapse:collapse;">
-              <thead>
-                <tr>
-                  <th style="text-align:left; padding:10px 8px;">用户名</th>
-                  <th style="text-align:left; padding:10px 8px;">显示名</th>
-                  <th style="text-align:left; padding:10px 8px;">角色</th>
-                  <th style="text-align:left; padding:10px 8px;">状态</th>
-                  <th style="text-align:left; padding:10px 8px;">最后登录</th>
-                  <th style="text-align:left; padding:10px 8px;">操作</th>
-                </tr>
-              </thead>
-              <tbody id="users-table-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Save Button (sticky at bottom of all tabs) -->
@@ -502,7 +449,6 @@
     let aiSelectedModelId = "";
     let aiEditingProviderId = "";
     let persistedAiModelIds = new Set();
-    let adminUsers = [];
 
     /* ── Helpers ── */
     function getImageMode() {
@@ -1486,156 +1432,10 @@
         clearFields.clear();
         syncS3Panel();
         validateAll();
-        await loadUsers();
       } catch (err) {
         AdminUI.toast("设置读取失败", "error");
       }
     }
-
-    function formatLocalDateTime(value) {
-      if (!value) return "-";
-      const parsed = new Date(value);
-      if (Number.isNaN(parsed.getTime())) return value;
-      return parsed.toLocaleString("zh-CN", {
-        hour12: false,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).replace(/\//g, "-");
-    }
-
-    function renderUsers() {
-      const body = document.getElementById("users-table-body");
-      body.innerHTML = "";
-      adminUsers.forEach((item) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.username || "-")}</td>
-          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.display_name || "-")}</td>
-          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.role || "-")}</td>
-          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.status || "-")}</td>
-          <td style="padding:10px 8px;">${AdminUI.escapeHtml(formatLocalDateTime(item.last_login_at))}</td>
-          <td style="padding:10px 8px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-ghost user-toggle-btn" data-user-id="${AdminUI.escapeHtml(item.id)}" data-next-status="${item.status === "active" ? "disabled" : "active"}">
-              ${item.status === "active" ? "禁用" : "启用"}
-            </button>
-            <button class="btn btn-secondary user-reset-btn" data-user-id="${AdminUI.escapeHtml(item.id)}">重置密码</button>
-          </td>
-        `;
-        body.appendChild(row);
-      });
-      document.querySelectorAll(".user-toggle-btn").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const userId = button.getAttribute("data-user-id");
-          const nextStatus = button.getAttribute("data-next-status");
-          const res = await fetch(`/api/admin/users/${userId}`, {
-            method: "PUT",
-            headers: AdminUI.buildJsonHeaders(),
-            body: JSON.stringify({ status: nextStatus }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            AdminUI.toast(data.detail || "更新用户状态失败", "error");
-            return;
-          }
-          AdminUI.toast("用户状态已更新", "success");
-          await loadUsers();
-        });
-      });
-      document.querySelectorAll(".user-reset-btn").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const userId = button.getAttribute("data-user-id");
-          const nextPassword = window.prompt("输入新的密码");
-          if (!nextPassword) return;
-          const res = await fetch(`/api/admin/users/${userId}/password`, {
-            method: "POST",
-            headers: AdminUI.buildJsonHeaders(),
-            body: JSON.stringify({ new_password: nextPassword }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            AdminUI.toast(data.detail || "重置密码失败", "error");
-            return;
-          }
-          AdminUI.toast("密码已重置", "success");
-          AdminUI.setHtml("users-result-area", AdminUI.resultHtml({
-            title: "密码已重置",
-            tone: "success",
-            items: [{ label: "用户", value: data.user?.username || "-" }],
-          }));
-        });
-      });
-    }
-
-    async function loadUsers() {
-      const panel = document.getElementById("users-panel");
-      const note = document.getElementById("users-access-note");
-      const res = await fetch("/api/admin/users");
-      if (res.status === 403) {
-        panel.classList.add("hidden");
-        note.textContent = "当前账号不是管理员，用户管理已隐藏。";
-        return;
-      }
-      const data = await res.json();
-      if (!res.ok) {
-        note.textContent = data.detail || "用户列表读取失败";
-        return;
-      }
-      panel.classList.remove("hidden");
-      note.textContent = "管理员可新增、禁用账号并重置密码。";
-      adminUsers = data.items || [];
-      renderUsers();
-    }
-
-    document.getElementById("create-user-btn").addEventListener("click", async () => {
-      try {
-        const res = await fetch("/api/admin/users", {
-          method: "POST",
-          headers: AdminUI.buildJsonHeaders(),
-          body: JSON.stringify({
-            username: document.getElementById("new-user-username").value.trim(),
-            password: document.getElementById("new-user-password").value,
-            display_name: document.getElementById("new-user-display-name").value.trim(),
-            role: document.getElementById("new-user-role").value,
-            note: document.getElementById("new-user-note").value.trim(),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          AdminUI.toast(data.detail || "创建用户失败", "error");
-          AdminUI.setHtml("users-result-area", AdminUI.resultHtml({
-            title: "创建失败",
-            tone: "error",
-            description: data.detail || "请检查输入或当前账号权限",
-            json: data,
-          }));
-          return;
-        }
-        AdminUI.toast("用户已创建", "success");
-        document.getElementById("new-user-username").value = "";
-        document.getElementById("new-user-password").value = "";
-        document.getElementById("new-user-display-name").value = "";
-        document.getElementById("new-user-note").value = "";
-        AdminUI.setHtml("users-result-area", AdminUI.resultHtml({
-          title: "创建成功",
-          tone: "success",
-          items: [
-            { label: "用户名", value: data.user?.username || "-" },
-            { label: "角色", value: data.user?.role || "-" },
-          ],
-        }));
-        await loadUsers();
-      } catch (error) {
-        AdminUI.toast("创建用户失败", "error");
-        AdminUI.setHtml("users-result-area", AdminUI.resultHtml({
-          title: "网络错误",
-          tone: "error",
-          description: String(error),
-        }));
-      }
-    });
 
     /* ── Logout ── */
     document.getElementById("logout-btn").addEventListener("click", async () => {
