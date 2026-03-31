@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>同步源 — Wechat MD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="logo">Wechat <span>MD</span></div>
+    <a class="nav-item" href="/">转换</a>
+    <a class="nav-item" href="/tasks">任务历史</a>
+    <a class="nav-item active" href="/sync">同步源</a>
+    <a class="nav-item" href="/articles">文章库</a>
+    <a class="nav-item" href="/settings">设置</a>
+    <button id="logout-btn" class="nav-item logout">退出</button>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>公众号同步源</h1>
+      <p>配置公众号后台凭据，搜索公众号，创建同步源，并触发首次范围同步或后续增量同步。</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">公众号后台凭据</h2>
+      <p class="card-desc">第一版使用手动配置的公众号后台 token / cookie，不在页面内做扫码登录。</p>
+      <div class="field-row">
+        <div class="field">
+          <label for="wechat-mp-token">Token</label>
+          <input id="wechat-mp-token" type="password" placeholder="留空则保持不变">
+          <div class="field-hint text-muted" id="wechat-mp-token-meta"></div>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button id="check-login-status" class="btn btn-secondary" style="width:100%;">检查登录状态</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="wechat-mp-cookie">Cookie</label>
+        <textarea id="wechat-mp-cookie" style="min-height:120px;" placeholder="留空则保持不变"></textarea>
+        <div class="field-hint text-muted" id="wechat-mp-cookie-meta"></div>
+      </div>
+      <div class="action-row">
+        <button id="clear-wechat-mp-token" class="btn btn-danger">清空 Token</button>
+        <button id="clear-wechat-mp-cookie" class="btn btn-danger">清空 Cookie</button>
+        <button id="save-wechat-mp-config" class="btn btn-primary">保存凭据</button>
+      </div>
+      <div id="wechat-mp-result-area"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">搜索公众号</h2>
+      <p class="card-desc">搜索结果只用于添加同步源；首次同步是否执行由你在下方手动决定。</p>
+      <div class="field-row">
+        <div class="field">
+          <label for="search-keyword">公众号名称</label>
+          <input id="search-keyword" placeholder="例如：阮一峰">
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button id="search-account-btn" class="btn btn-secondary" style="width:100%;">搜索公众号</button>
+        </div>
+      </div>
+      <div id="search-result-area"></div>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px 8px;">公众号</th>
+              <th style="text-align:left; padding:10px 8px;">别名</th>
+              <th style="text-align:left; padding:10px 8px;">fakeid</th>
+              <th style="text-align:left; padding:10px 8px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="search-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">同步参数</h2>
+      <p class="card-desc">首次同步必须显式选择范围；后续增量同步可直接执行。</p>
+      <div class="field-row">
+        <div class="field">
+          <label for="sync-start-date">开始日期</label>
+          <input id="sync-start-date" type="date">
+        </div>
+        <div class="field">
+          <label for="sync-end-date">结束日期</label>
+          <input id="sync-end-date" type="date">
+        </div>
+      </div>
+      <label class="check-row" style="margin-top:8px;">
+        <input id="sync-queue-for-ingest" type="checkbox" checked>
+        同步后直接加入批量清洗/入库队列
+      </label>
+      <label class="check-row" style="margin-top:8px;">
+        <input id="sync-ai-enabled" type="checkbox">
+        同步后启用 AI 润色
+      </label>
+      <label class="check-row" style="margin-top:8px;">
+        <input id="sync-skip-ingested" type="checkbox" checked>
+        跳过已入库文章
+      </label>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">已添加同步源</h2>
+      <p class="card-desc">支持首次范围同步与后续增量同步。</p>
+      <div id="sources-result-area"></div>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px 8px;">公众号</th>
+              <th style="text-align:left; padding:10px 8px;">fakeid</th>
+              <th style="text-align:left; padding:10px 8px;">最近同步</th>
+              <th style="text-align:left; padding:10px 8px;">范围</th>
+              <th style="text-align:left; padding:10px 8px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="sources-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js"></script>
+  <script>
+    const clearFields = new Set();
+    const state = { searchItems: [], sources: [] };
+
+    function rangePayload() {
+      return {
+        start_date: document.getElementById("sync-start-date").value,
+        end_date: document.getElementById("sync-end-date").value,
+        queue_for_ingest: document.getElementById("sync-queue-for-ingest").checked,
+        ai_enabled: document.getElementById("sync-ai-enabled").checked,
+        skip_ingested: document.getElementById("sync-skip-ingested").checked,
+        output_target: "fns",
+      };
+    }
+
+    function renderSearchRows() {
+      const body = document.getElementById("search-table-body");
+      body.innerHTML = "";
+      state.searchItems.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.nickname || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.alias || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.fakeid || "-")}</td>
+          <td style="padding:10px 8px;"><button class="btn btn-primary add-source-btn" data-fakeid="${AdminUI.escapeHtml(item.fakeid)}">添加同步源</button></td>
+        `;
+        body.appendChild(row);
+      });
+      document.querySelectorAll(".add-source-btn").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const account = state.searchItems.find((item) => item.fakeid === button.getAttribute("data-fakeid"));
+          if (!account) return;
+          const res = await fetch("/api/sync/sources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(account),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            AdminUI.toast(data.detail || "添加同步源失败", "error");
+            return;
+          }
+          AdminUI.toast("同步源已添加", "success");
+          await loadSources();
+        });
+      });
+    }
+
+    function renderSourcesRows() {
+      const body = document.getElementById("sources-table-body");
+      body.innerHTML = "";
+      state.sources.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.account_name || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.account_fakeid || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.last_sync_at || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml((item.last_range_start || "-") + " ~ " + (item.last_range_end || "-"))}</td>
+          <td style="padding:10px 8px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-secondary source-sync-manual" data-source-id="${AdminUI.escapeHtml(item.id)}">首次/范围同步</button>
+            <button class="btn btn-ghost source-sync-incremental" data-source-id="${AdminUI.escapeHtml(item.id)}">增量同步</button>
+            <button class="btn btn-danger source-delete" data-source-id="${AdminUI.escapeHtml(item.id)}">删除</button>
+          </td>
+        `;
+        body.appendChild(row);
+      });
+      document.querySelectorAll(".source-sync-manual").forEach((button) => {
+        button.addEventListener("click", () => runSync(button.getAttribute("data-source-id"), true));
+      });
+      document.querySelectorAll(".source-sync-incremental").forEach((button) => {
+        button.addEventListener("click", () => runSync(button.getAttribute("data-source-id"), false));
+      });
+      document.querySelectorAll(".source-delete").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const sourceId = button.getAttribute("data-source-id");
+          const res = await fetch(`/api/sync/sources/${sourceId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (!res.ok) {
+            AdminUI.toast(data.detail || "删除失败", "error");
+            return;
+          }
+          AdminUI.toast("同步源已删除", "success");
+          await loadSources();
+        });
+      });
+    }
+
+    async function runSync(sourceId, manual) {
+      const payload = rangePayload();
+      if (!manual) {
+        delete payload.start_date;
+        delete payload.end_date;
+      } else if (!payload.start_date || !payload.end_date) {
+        AdminUI.toast("首次同步必须选择开始和结束日期", "warn");
+        return;
+      }
+      const res = await fetch(`/api/sync/sources/${sourceId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "同步失败", "error");
+        return;
+      }
+      AdminUI.setHtml("sources-result-area", AdminUI.resultHtml({
+        title: "同步完成",
+        tone: "success",
+        description: `抓取 ${data.fetched_count || 0} 条，新增 ${data.new_count || 0} 条，入队 ${data.queued_count || 0} 条。`,
+        json: data,
+      }));
+      AdminUI.toast("同步任务已完成", "success");
+      await loadSources();
+    }
+
+    async function loadSyncConfig() {
+      const res = await fetch("/api/sync/config");
+      const data = await res.json();
+      document.getElementById("wechat-mp-token").value = "";
+      document.getElementById("wechat-mp-cookie").value = "";
+      document.getElementById("wechat-mp-token-meta").textContent = data.wechat_mp_token_configured ? `已配置：${data.wechat_mp_token_masked}` : "未配置";
+      document.getElementById("wechat-mp-cookie-meta").textContent = data.wechat_mp_cookie_configured ? `已配置：${data.wechat_mp_cookie_masked}` : "未配置";
+      clearFields.clear();
+    }
+
+    async function loadSources() {
+      const res = await fetch("/api/sync/sources");
+      const data = await res.json();
+      state.sources = data.items || [];
+      renderSourcesRows();
+    }
+
+    document.getElementById("search-account-btn").addEventListener("click", async () => {
+      const keyword = document.getElementById("search-keyword").value.trim();
+      if (!keyword) {
+        AdminUI.toast("请输入公众号名称", "warn");
+        return;
+      }
+      const res = await fetch(`/api/sync/search?keyword=${encodeURIComponent(keyword)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "搜索失败", "error");
+        return;
+      }
+      state.searchItems = data.items || [];
+      renderSearchRows();
+      AdminUI.setHtml("search-result-area", AdminUI.resultHtml({
+        title: "搜索完成",
+        tone: "success",
+        description: `匹配到 ${state.searchItems.length} 个公众号。`,
+      }));
+    });
+
+    document.getElementById("save-wechat-mp-config").addEventListener("click", async () => {
+      const payload = {
+        clear_fields: Array.from(clearFields),
+      };
+      const token = document.getElementById("wechat-mp-token").value.trim();
+      const cookie = document.getElementById("wechat-mp-cookie").value.trim();
+      if (token) payload.wechat_mp_token = token;
+      if (cookie) payload.wechat_mp_cookie = cookie;
+      const res = await fetch("/api/sync/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "保存失败", "error");
+        return;
+      }
+      AdminUI.toast("公众号后台凭据已保存", "success");
+      AdminUI.setHtml("wechat-mp-result-area", AdminUI.resultHtml({
+        title: "保存成功",
+        tone: "success",
+        json: data,
+      }));
+      await loadSyncConfig();
+    });
+
+    document.getElementById("check-login-status").addEventListener("click", async () => {
+      const res = await fetch("/api/sync/login-status");
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "检查失败", "error");
+        return;
+      }
+      AdminUI.setHtml("wechat-mp-result-area", AdminUI.resultHtml({
+        title: data.valid ? "登录可用" : "登录不可用",
+        tone: data.valid ? "success" : "warn",
+        description: data.message || "",
+        json: data,
+      }));
+    });
+
+    document.getElementById("clear-wechat-mp-token").addEventListener("click", () => {
+      clearFields.add("wechat_mp_token");
+      document.getElementById("wechat-mp-token").value = "";
+      document.getElementById("wechat-mp-token-meta").textContent = "保存时将清空 Token";
+    });
+
+    document.getElementById("clear-wechat-mp-cookie").addEventListener("click", () => {
+      clearFields.add("wechat_mp_cookie");
+      document.getElementById("wechat-mp-cookie").value = "";
+      document.getElementById("wechat-mp-cookie-meta").textContent = "保存时将清空 Cookie";
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await fetch("/api/session", { method: "DELETE" });
+      window.location.href = "/login";
+    });
+
+    loadSyncConfig();
+    loadSources();
+  </script>
+</body>
+</html>

@@ -46,6 +46,20 @@ async def tasks_page(
     return _resolve_page("tasks.html", session_cookie)
 
 
+@app.get("/sync", include_in_schema=False)
+async def sync_page(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    return _resolve_page("sync.html", session_cookie)
+
+
+@app.get("/articles", include_in_schema=False)
+async def articles_page(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    return _resolve_page("articles.html", session_cookie)
+
+
 @app.get("/login", include_in_schema=False)
 async def login_page(
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),

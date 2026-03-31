@@ -58,7 +58,7 @@ class ContentSourcesTests(unittest.TestCase):
         response.encoding = "utf-8"
         session.get.return_value = response
 
-        source_type, article, _ = fetch_article_from_url(
+        source_type, article, _, diagnostics = fetch_article_from_url(
             "https://example.com/post",
             timeout=30,
             http_session=session,
@@ -68,6 +68,8 @@ class ContentSourcesTests(unittest.TestCase):
         self.assertEqual(article.title, "普通网页标题")
         self.assertEqual(article.author, "网页作者")
         self.assertIn("网页正文", article.content_html)
+        self.assertEqual(diagnostics["fetch_status"], "success")
+        self.assertEqual(diagnostics["content_kind"], "article")
 
     def test_fetch_article_from_url_rejects_empty_generic_web_page(self):
         session = Mock()

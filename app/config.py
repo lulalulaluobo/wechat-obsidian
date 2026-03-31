@@ -19,6 +19,7 @@ from app.auth import (
 
 DEFAULT_FNS_TARGET_DIR = "00_Inbox/微信公众号"
 DEFAULT_IMAGE_MODE = "wechat_hotlink"
+DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS = 180
 IMAGE_MODE_VALUES = {"wechat_hotlink", "s3_hotlink"}
 DEFAULT_TELEGRAM_NOTIFY_ON_COMPLETE = True
 DEFAULT_FEISHU_NOTIFY_ON_COMPLETE = True
@@ -136,6 +137,8 @@ class Settings:
     fns_vault: str | None = None
     fns_target_dir: str = DEFAULT_FNS_TARGET_DIR
     cleanup_temp_on_success: bool = True
+    single_conversion_isolation_enabled: bool = True
+    single_conversion_hard_timeout_seconds: int = DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS
     image_mode: str = DEFAULT_IMAGE_MODE
     image_storage_provider: str | None = None
     image_storage_endpoint: str | None = None
@@ -180,6 +183,8 @@ class Settings:
     ai_enable_content_polish: bool = False
     ai_content_polish_prompt: str = DEFAULT_AI_CONTENT_POLISH_PROMPT
     ai_template_source: str = "manual"
+    wechat_mp_token: str | None = None
+    wechat_mp_cookie: str | None = None
 
     @property
     def fns_enabled(self) -> bool:
@@ -251,6 +256,10 @@ class Settings:
             and self.ai_context_template.strip()
         )
 
+    @property
+    def wechat_mp_configured(self) -> bool:
+        return bool(self.wechat_mp_token and self.wechat_mp_cookie)
+
 
 FNS_FIELDS = {
     "fns_base_url",
@@ -286,6 +295,8 @@ FEISHU_TEXT_FIELDS = {
 }
 FEISHU_SECRET_FIELDS = {"feishu_app_secret", "feishu_verification_token", "feishu_encrypt_key"}
 SECRET_FIELDS = SECRET_FIELDS | TELEGRAM_SECRET_FIELDS | FEISHU_SECRET_FIELDS
+WECHAT_MP_SECRET_FIELDS = {"wechat_mp_token", "wechat_mp_cookie"}
+SECRET_FIELDS = SECRET_FIELDS | WECHAT_MP_SECRET_FIELDS
 TELEGRAM_TEXT_FIELD_MAP = {
     "telegram_webhook_public_base_url": "webhook_public_base_url",
     "telegram_webhook_status": "webhook_status",
@@ -345,6 +356,7 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
     image_storage = dict(user_settings["image_storage"])
     telegram_settings = dict(user_settings["telegram"])
     feishu_settings = dict(user_settings["feishu"])
+    wechat_mp_settings = dict(user_settings.get("wechat_mp") or {})
     clear_set = {field for field in (clear_fields or []) if field in SECRET_FIELDS}
 
     for field in clear_set:
@@ -362,6 +374,10 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
             feishu_settings["verification_token"] = ""
         elif field == "feishu_encrypt_key":
             feishu_settings["encrypt_key"] = ""
+        elif field == "wechat_mp_token":
+            wechat_mp_settings["token"] = ""
+        elif field == "wechat_mp_cookie":
+            wechat_mp_settings["cookie"] = ""
         elif field == "ai_api_key":
             ai_block = dict(user_settings.get("ai") or {})
             providers = [dict(item) for item in ai_block.get("providers", []) if isinstance(item, dict)]
@@ -388,6 +404,18 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
         if raw_value is None:
             continue
         user_settings[field] = str(raw_value).strip()
+
+    if "single_conversion_isolation_enabled" in payload:
+        user_settings["single_conversion_isolation_enabled"] = _as_bool(
+            payload.get("single_conversion_isolation_enabled"),
+            default=True,
+        )
+    if "single_conversion_hard_timeout_seconds" in payload and payload.get("single_conversion_hard_timeout_seconds") is not None:
+        user_settings["single_conversion_hard_timeout_seconds"] = _as_int(
+            payload.get("single_conversion_hard_timeout_seconds"),
+            default=DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS,
+            minimum=1,
+        )
 
     if "image_mode" in payload and payload.get("image_mode") is not None:
         user_settings["image_mode"] = str(payload.get("image_mode") or "").strip() or DEFAULT_IMAGE_MODE
@@ -450,6 +478,11 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
 
     if "feishu_allowed_open_ids" in payload:
         feishu_settings["allowed_open_ids"] = _normalize_identifier_list(payload.get("feishu_allowed_open_ids"))
+
+    if "wechat_mp_token" in payload and payload.get("wechat_mp_token") is not None:
+        wechat_mp_settings["token"] = str(payload.get("wechat_mp_token") or "").strip()
+    if "wechat_mp_cookie" in payload and payload.get("wechat_mp_cookie") is not None:
+        wechat_mp_settings["cookie"] = str(payload.get("wechat_mp_cookie") or "").strip()
 
     for field in AI_BOOL_FIELDS:
         if field not in payload:
@@ -521,6 +554,7 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
     user_settings["image_storage"] = image_storage
     user_settings["telegram"] = telegram_settings
     user_settings["feishu"] = feishu_settings
+    user_settings["wechat_mp"] = wechat_mp_settings
     updated["user_settings"] = _normalize_user_settings(user_settings)
     _validate_runtime_config(updated)
     _write_runtime_config(config_path, updated)
@@ -617,6 +651,7 @@ def build_admin_settings_payload() -> dict[str, Any]:
     image_storage = user_settings["image_storage"]
     telegram = user_settings["telegram"]
     feishu = user_settings["feishu"]
+    wechat_mp = user_settings.get("wechat_mp") if isinstance(user_settings.get("wechat_mp"), dict) else {}
     runtime_overrides = [
         "auth.user.username",
         "auth.user.password_hash",
@@ -629,6 +664,7 @@ def build_admin_settings_payload() -> dict[str, Any]:
         *[f"user_settings.image_storage.{key}" for key in sorted(image_storage.keys())],
         *[f"user_settings.telegram.{key}" for key in sorted(telegram.keys())],
         *[f"user_settings.feishu.{key}" for key in sorted(feishu.keys())],
+        *[f"user_settings.wechat_mp.{key}" for key in sorted(wechat_mp.keys())],
         "user_settings.ai.providers",
         "user_settings.ai.models",
         "user_settings.ai.selected_model_id",
@@ -645,6 +681,8 @@ def build_admin_settings_payload() -> dict[str, Any]:
         "fns_token_configured": bool(settings.fns_token),
         "fns_token_masked": _mask_secret(settings.fns_token),
         "cleanup_temp_on_success": settings.cleanup_temp_on_success,
+        "single_conversion_isolation_enabled": settings.single_conversion_isolation_enabled,
+        "single_conversion_hard_timeout_seconds": settings.single_conversion_hard_timeout_seconds,
         "image_mode": settings.image_mode,
         "image_storage_enabled": settings.image_storage_enabled,
         "image_storage_provider": settings.image_storage_provider or "s3",
@@ -681,6 +719,11 @@ def build_admin_settings_payload() -> dict[str, Any]:
         "feishu_notify_on_complete": settings.feishu_notify_on_complete,
         "feishu_webhook_status": settings.feishu_webhook_status,
         "feishu_webhook_message": settings.feishu_webhook_message,
+        "wechat_mp_configured": settings.wechat_mp_configured,
+        "wechat_mp_token_configured": bool(settings.wechat_mp_token),
+        "wechat_mp_token_masked": _mask_secret(settings.wechat_mp_token),
+        "wechat_mp_cookie_configured": bool(settings.wechat_mp_cookie),
+        "wechat_mp_cookie_masked": _mask_secret(settings.wechat_mp_cookie),
         "ai_enabled": settings.ai_enabled,
         "ai_configured": settings.ai_configured,
         "ai_model": settings.ai_model,
@@ -709,6 +752,7 @@ def get_settings() -> Settings:
     image_storage = runtime_user_settings["image_storage"]
     telegram = runtime_user_settings["telegram"]
     feishu = runtime_user_settings["feishu"]
+    wechat_mp = runtime_user_settings.get("wechat_mp") if isinstance(runtime_user_settings.get("wechat_mp"), dict) else {}
     ai_registry = runtime_user_settings["ai"]
 
     output_dir = Path(os.environ.get("WECHAT_MD_DEFAULT_OUTPUT_DIR", r"D:\obsidian\00_Inbox")).resolve()
@@ -730,6 +774,19 @@ def get_settings() -> Settings:
         or DEFAULT_FNS_TARGET_DIR
     )
     cleanup_temp_on_success = _as_bool(runtime_user_settings.get("cleanup_temp_on_success"), default=True)
+    single_conversion_isolation_enabled = _as_bool(
+        os.environ.get("WECHAT_MD_SINGLE_CONVERSION_ISOLATION_ENABLED")
+        if os.environ.get("WECHAT_MD_SINGLE_CONVERSION_ISOLATION_ENABLED") is not None
+        else runtime_user_settings.get("single_conversion_isolation_enabled"),
+        default=True,
+    )
+    single_conversion_hard_timeout_seconds = _as_int(
+        os.environ.get("WECHAT_MD_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS")
+        if os.environ.get("WECHAT_MD_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS") is not None
+        else runtime_user_settings.get("single_conversion_hard_timeout_seconds"),
+        default=DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS,
+        minimum=1,
+    )
     image_mode = _normalize_image_mode(runtime_user_settings.get("image_mode") or os.environ.get("WECHAT_MD_IMAGE_MODE"))
 
     provider = str(image_storage.get("provider") or os.environ.get("WECHAT_MD_IMAGE_STORAGE_PROVIDER") or "s3").strip() or "s3"
@@ -780,6 +837,8 @@ def get_settings() -> Settings:
     )
     feishu_webhook_status = str(feishu.get("webhook_status") or "inactive").strip() or "inactive"
     feishu_webhook_message = str(feishu.get("webhook_message") or "").strip()
+    wechat_mp_token = str(wechat_mp.get("token") or os.environ.get("WECHAT_MD_WECHAT_MP_TOKEN") or "").strip() or None
+    wechat_mp_cookie = str(wechat_mp.get("cookie") or os.environ.get("WECHAT_MD_WECHAT_MP_COOKIE") or "").strip() or None
     ai_enabled = _as_bool(runtime_user_settings.get("ai_enabled"), default=False)
     ai_selected_provider, ai_selected_model = _resolve_selected_ai_objects(ai_registry)
     ai_base_url = str((ai_selected_provider or {}).get("base_url") or "").strip() or None
@@ -809,6 +868,8 @@ def get_settings() -> Settings:
         fns_vault=fns_vault,
         fns_target_dir=fns_target_dir.strip("/\\"),
         cleanup_temp_on_success=cleanup_temp_on_success,
+        single_conversion_isolation_enabled=single_conversion_isolation_enabled,
+        single_conversion_hard_timeout_seconds=single_conversion_hard_timeout_seconds,
         image_mode=image_mode,
         image_storage_provider=provider,
         image_storage_endpoint=endpoint.rstrip("/") if endpoint else None,
@@ -853,6 +914,8 @@ def get_settings() -> Settings:
         ai_enable_content_polish=ai_enable_content_polish,
         ai_content_polish_prompt=ai_content_polish_prompt,
         ai_template_source=ai_template_source,
+        wechat_mp_token=wechat_mp_token,
+        wechat_mp_cookie=wechat_mp_cookie,
     )
 
 
@@ -898,6 +961,7 @@ def _normalize_user_settings(raw_settings: Any) -> dict[str, Any]:
     image_storage_source = source.get("image_storage") if isinstance(source.get("image_storage"), dict) else {}
     telegram_source = source.get("telegram") if isinstance(source.get("telegram"), dict) else {}
     feishu_source = source.get("feishu") if isinstance(source.get("feishu"), dict) else {}
+    wechat_mp_source = source.get("wechat_mp") if isinstance(source.get("wechat_mp"), dict) else {}
     ai_registry = _normalize_ai_registry(source)
     return {
         "fns_base_url": str(source.get("fns_base_url") or "").strip(),
@@ -909,6 +973,12 @@ def _normalize_user_settings(raw_settings: Any) -> dict[str, Any]:
         "fns_vault": str(source.get("fns_vault") or "").strip(),
         "fns_target_dir": str(source.get("fns_target_dir") or DEFAULT_FNS_TARGET_DIR).strip() or DEFAULT_FNS_TARGET_DIR,
         "cleanup_temp_on_success": _as_bool(source.get("cleanup_temp_on_success"), default=True),
+        "single_conversion_isolation_enabled": _as_bool(source.get("single_conversion_isolation_enabled"), default=True),
+        "single_conversion_hard_timeout_seconds": _as_int(
+            source.get("single_conversion_hard_timeout_seconds"),
+            default=DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS,
+            minimum=1,
+        ),
         "ai_enabled": _as_bool(source.get("ai_enabled"), default=False),
         "ai_prompt_template": str(source.get("ai_prompt_template") or DEFAULT_AI_PROMPT_TEMPLATE),
         "ai_frontmatter_template": str(source.get("ai_frontmatter_template") or DEFAULT_AI_FRONTMATTER_TEMPLATE),
@@ -976,6 +1046,18 @@ def _normalize_user_settings(raw_settings: Any) -> dict[str, Any]:
             "webhook_status": str(feishu_source.get("webhook_status") or "inactive").strip() or "inactive",
             "webhook_message": str(feishu_source.get("webhook_message") or "").strip(),
         },
+        "wechat_mp": {
+            "token": _load_secret_value(
+                encrypted_value=wechat_mp_source.get("token_encrypted"),
+                plaintext_value=wechat_mp_source.get("token"),
+                field_name="wechat_mp.token",
+            ),
+            "cookie": _load_secret_value(
+                encrypted_value=wechat_mp_source.get("cookie_encrypted"),
+                plaintext_value=wechat_mp_source.get("cookie"),
+                field_name="wechat_mp.cookie",
+            ),
+        },
     }
 
 
@@ -990,6 +1072,7 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
     image_storage = user_settings["image_storage"]
     telegram = user_settings["telegram"]
     feishu = user_settings["feishu"]
+    wechat_mp = user_settings.get("wechat_mp") if isinstance(user_settings.get("wechat_mp"), dict) else {}
     ai_registry = user_settings["ai"]
     return {
         "auth": {
@@ -1005,6 +1088,15 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
             "fns_vault": str(user_settings.get("fns_vault") or "").strip(),
             "fns_target_dir": str(user_settings.get("fns_target_dir") or DEFAULT_FNS_TARGET_DIR).strip() or DEFAULT_FNS_TARGET_DIR,
             "cleanup_temp_on_success": _as_bool(user_settings.get("cleanup_temp_on_success"), default=True),
+            "single_conversion_isolation_enabled": _as_bool(
+                user_settings.get("single_conversion_isolation_enabled"),
+                default=True,
+            ),
+            "single_conversion_hard_timeout_seconds": _as_int(
+                user_settings.get("single_conversion_hard_timeout_seconds"),
+                default=DEFAULT_SINGLE_CONVERSION_HARD_TIMEOUT_SECONDS,
+                minimum=1,
+            ),
             "ai_enabled": _as_bool(user_settings.get("ai_enabled"), default=False),
             "ai_prompt_template": str(user_settings.get("ai_prompt_template") or DEFAULT_AI_PROMPT_TEMPLATE),
             "ai_frontmatter_template": str(user_settings.get("ai_frontmatter_template") or DEFAULT_AI_FRONTMATTER_TEMPLATE),
@@ -1047,6 +1139,10 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
                 "notify_on_complete": _as_bool(feishu.get("notify_on_complete"), default=DEFAULT_FEISHU_NOTIFY_ON_COMPLETE),
                 "webhook_status": str(feishu.get("webhook_status") or "inactive").strip() or "inactive",
                 "webhook_message": str(feishu.get("webhook_message") or "").strip(),
+            },
+            "wechat_mp": {
+                "token_encrypted": encrypt_secret(str(wechat_mp.get("token") or "")),
+                "cookie_encrypted": encrypt_secret(str(wechat_mp.get("cookie") or "")),
             },
         },
     }
@@ -1429,6 +1525,19 @@ def _as_bool(value: Any, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_int(value: Any, default: int, minimum: int | None = None) -> int:
+    if value is None or value == "":
+        result = int(default)
+    else:
+        try:
+            result = int(value)
+        except (TypeError, ValueError):
+            result = int(default)
+    if minimum is not None:
+        result = max(result, int(minimum))
+    return result
 
 
 def _normalize_chat_ids(value: Any) -> list[str]:

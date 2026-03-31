@@ -27,29 +27,39 @@ from app.config import (
     update_telegram_webhook_state,
 )
 from app.services import (
+    build_sync_config_payload,
     build_config_payload,
     build_output_target,
     check_fns_status,
+    check_wechat_mp_login_status,
     configure_feishu_webhook_state,
     configure_telegram_webhook,
+    create_sync_source,
+    delete_sync_source,
     execute_single_conversion,
     extract_feishu_message_text,
     extract_single_wechat_url,
     ensure_runtime_environment,
+    get_ingest_job,
     get_internal_workdir_root,
     get_task,
     get_task_history_store,
     job_store,
     list_tasks,
+    list_sync_articles,
+    list_sync_sources_payload,
     normalize_output_dir,
     parse_links,
     read_uploaded_text,
+    search_wechat_accounts,
     send_feishu_message,
     send_telegram_message,
+    submit_article_ingest,
     submit_feishu_convert_task,
     submit_rerun_task,
     submit_rerun_tasks,
     submit_telegram_convert_task,
+    sync_source_articles,
     test_ai_connectivity,
     TELEGRAM_SECRET_HEADER,
 )
@@ -435,6 +445,165 @@ async def update_admin_password(
         max_age=7 * 24 * 60 * 60,
     )
     return {"status": "success"}
+
+
+@router.get("/api/sync/config")
+async def get_sync_config(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    return build_sync_config_payload()
+
+
+@router.put("/api/sync/config")
+async def update_sync_config(
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    clear_fields = payload.get("clear_fields")
+    if not isinstance(clear_fields, list):
+        clear_fields = []
+    try:
+        save_runtime_config(payload, clear_fields=clear_fields)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"status": "success", "config": build_sync_config_payload()}
+
+
+@router.get("/api/sync/login-status")
+async def get_sync_login_status(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    try:
+        return check_wechat_mp_login_status()
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/sync/search")
+async def get_sync_search(
+    keyword: str,
+    begin: int = 0,
+    size: int = 5,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    try:
+        return search_wechat_accounts(keyword=keyword, begin=begin, size=size)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/sync/sources")
+async def get_sync_sources(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    return list_sync_sources_payload()
+
+
+@router.post("/api/sync/sources")
+async def post_sync_source(
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    try:
+        return create_sync_source(payload)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.delete("/api/sync/sources/{source_id}")
+async def delete_sync_source_route(
+    source_id: str,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    delete_sync_source(source_id)
+    return {"status": "success"}
+
+
+@router.post("/api/sync/sources/{source_id}/sync")
+async def post_sync_source_run(
+    source_id: str,
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    try:
+        return sync_source_articles(
+            source_id=source_id,
+            start_date=str(payload.get("start_date") or "").strip() or None,
+            end_date=str(payload.get("end_date") or "").strip() or None,
+            queue_for_ingest=_parse_bool(payload.get("queue_for_ingest")),
+            ai_enabled=_parse_bool(payload.get("ai_enabled")),
+            output_target=str(payload.get("output_target") or build_output_target(None)).strip(),
+            skip_ingested=_parse_bool(payload.get("skip_ingested")) if payload.get("skip_ingested") is not None else True,
+        )
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/sync/articles")
+async def get_sync_articles(
+    account_fakeid: str | None = None,
+    process_status: str | None = None,
+    is_ingested: bool | None = None,
+    published_from: int | None = None,
+    published_to: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    return list_sync_articles(
+        account_fakeid=account_fakeid,
+        process_status=process_status,
+        is_ingested=is_ingested,
+        published_from=published_from,
+        published_to=published_to,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/api/sync/articles/ingest")
+async def post_sync_articles_ingest(
+    request: Request,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    payload = await _read_convert_payload(request)
+    article_ids = payload.get("article_ids")
+    if not isinstance(article_ids, list) or not article_ids:
+        raise HTTPException(status_code=400, detail="article_ids 不能为空")
+    try:
+        return submit_article_ingest(
+            article_ids=[str(item) for item in article_ids],
+            ai_enabled=_parse_bool(payload.get("ai_enabled")),
+            output_target=str(payload.get("output_target") or build_output_target(None)).strip(),
+            skip_ingested=_parse_bool(payload.get("skip_ingested")) if payload.get("skip_ingested") is not None else True,
+        )
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/sync/ingest-jobs/{job_id}")
+async def get_sync_ingest_job(
+    job_id: str,
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    job = get_ingest_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="批量入库任务不存在")
+    return job
 
 
 @router.post("/api/integrations/telegram/webhook")

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
+import queue
 import re
 import shutil
 import threading
 import time
+import traceback
 import uuid
 import json
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +22,11 @@ from app.ai_adapters import extract_completion_preview, request_ai_completion, v
 from app.ai_polish import apply_ai_polish_to_markdown
 from app.content_sources import detect_source_type, extract_candidate_urls, fetch_article_from_url
 from app.config import get_settings, update_feishu_webhook_state, update_telegram_webhook_state
-from app.core.pipeline import run_article_pipeline, run_pipeline, sanitize_filename
+from app.core.pipeline import run_article_pipeline, sanitize_filename
+from app.source_cache import build_source_cache_key
+from app.sync_db import SyncStore
 from app.task_history import TaskHistoryStore
+from app.wechat_sync import WechatMPClient, parse_sync_range
 
 
 URL_PATTERN = re.compile(r"https?://mp\.weixin\.qq\.com/s(?:[/?][^\s)>]+)?", re.IGNORECASE)
@@ -26,6 +34,13 @@ TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 FEISHU_TENANT_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 _task_history_store_lock = threading.Lock()
 _task_history_store_cache: dict[str, TaskHistoryStore] = {}
+_sync_store_lock = threading.Lock()
+_sync_store_cache: dict[str, SyncStore] = {}
+_mp_context = mp.get_context("spawn")
+
+
+def run_pipeline(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    return run_article_pipeline(*args, **kwargs)
 
 
 def get_internal_workdir_root() -> Path:
@@ -61,6 +76,224 @@ def get_task_history_store() -> TaskHistoryStore:
             store = TaskHistoryStore(path)
             _task_history_store_cache[cache_key] = store
         return store
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def get_sync_store_path() -> Path:
+    settings = get_settings()
+    return (settings.runtime_config_path.parent / "wechat-md-v5.sqlite3").resolve()
+
+
+def get_sync_store() -> SyncStore:
+    path = get_sync_store_path()
+    cache_key = str(path)
+    with _sync_store_lock:
+        store = _sync_store_cache.get(cache_key)
+        if store is None:
+            store = SyncStore(path)
+            store.initialize()
+            _sync_store_cache[cache_key] = store
+        return store
+
+
+def _isolated_echo_worker(*, value: str) -> dict[str, Any]:
+    return {"value": value}
+
+
+def _isolated_sleep_worker(*, seconds: int) -> dict[str, Any]:
+    time.sleep(int(seconds))
+    return {"slept": int(seconds)}
+
+
+def _isolated_single_conversion_worker(
+    *,
+    url: str,
+    timeout: int,
+    save_html: bool,
+    output_target: str | None,
+    ai_enabled: bool | None,
+    require_ai_success: bool,
+    batch_workspace_root: str | None,
+    workspace_prefix: str,
+    task_id: str | None,
+    trigger_channel: str,
+    rerun_of_task_id: str | None,
+) -> dict[str, Any]:
+    return _run_single_conversion(
+        url=url,
+        timeout=timeout,
+        save_html=save_html,
+        output_target=output_target,
+        ai_enabled=ai_enabled,
+        require_ai_success=require_ai_success,
+        batch_workspace_root=Path(batch_workspace_root) if batch_workspace_root else None,
+        workspace_prefix=workspace_prefix,
+        task_id=task_id,
+        trigger_channel=trigger_channel,
+        rerun_of_task_id=rerun_of_task_id,
+    )
+
+
+_ISOLATED_WORKERS: dict[str, Any] = {
+    "_isolated_echo_worker": _isolated_echo_worker,
+    "_isolated_sleep_worker": _isolated_sleep_worker,
+    "_isolated_single_conversion_worker": _isolated_single_conversion_worker,
+}
+
+
+def _isolated_worker_entry(worker_name: str, kwargs: dict[str, Any], result_queue) -> None:
+    try:
+        worker = _ISOLATED_WORKERS[worker_name]
+    except KeyError as error:
+        result_queue.put(
+            {
+                "ok": False,
+                "error_type": "RuntimeError",
+                "error": f"未知隔离 worker: {worker_name}",
+                "traceback": "",
+            }
+        )
+        raise RuntimeError(f"未知隔离 worker: {worker_name}") from error
+    try:
+        result_queue.put({"ok": True, "result": worker(**kwargs)})
+    except Exception as error:  # pragma: no cover - exercised through parent wrapper
+        result_queue.put(
+            {
+                "ok": False,
+                "error_type": error.__class__.__name__,
+                "error": str(error),
+                "traceback": traceback.format_exc(),
+            }
+        )
+
+
+def _invoke_isolated_worker(worker_name: str, kwargs: dict[str, Any], *, timeout_seconds: int) -> dict[str, Any]:
+    result_queue = _mp_context.Queue()
+    process = _mp_context.Process(
+        target=_isolated_worker_entry,
+        args=(worker_name, kwargs, result_queue),
+    )
+    process.start()
+    process.join(timeout_seconds)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        if process.is_alive():  # pragma: no cover - defensive
+            process.kill()
+            process.join(1)
+        raise TimeoutError(f"单篇转换硬超时（{timeout_seconds}s）")
+
+    try:
+        payload = result_queue.get(timeout=1)
+    except queue.Empty as error:
+        if process.exitcode and process.exitcode != 0:
+            raise RuntimeError(f"隔离执行子进程异常退出（exit={process.exitcode}）") from error
+        raise RuntimeError("隔离执行未返回结果") from error
+
+    if payload.get("ok"):
+        return dict(payload.get("result") or {})
+
+    error_message = str(payload.get("error") or "隔离执行失败")
+    error_type = str(payload.get("error_type") or "RuntimeError")
+    if error_type == "TimeoutError":
+        raise TimeoutError(error_message)
+    raise RuntimeError(error_message)
+
+
+def _run_single_conversion_isolated(
+    *,
+    url: str,
+    timeout: int,
+    save_html: bool,
+    output_target: str | None,
+    ai_enabled: bool | None,
+    require_ai_success: bool,
+    batch_workspace_root: Path | None,
+    workspace_prefix: str,
+    task_id: str | None,
+    trigger_channel: str,
+    rerun_of_task_id: str | None,
+    hard_timeout_seconds: int,
+) -> dict[str, Any]:
+    return _invoke_isolated_worker(
+        "_isolated_single_conversion_worker",
+        {
+            "url": url,
+            "timeout": timeout,
+            "save_html": save_html,
+            "output_target": output_target,
+            "ai_enabled": ai_enabled,
+            "require_ai_success": require_ai_success,
+            "batch_workspace_root": str(batch_workspace_root) if batch_workspace_root else None,
+            "workspace_prefix": workspace_prefix,
+            "task_id": task_id,
+            "trigger_channel": trigger_channel,
+            "rerun_of_task_id": rerun_of_task_id,
+        },
+        timeout_seconds=hard_timeout_seconds,
+    )
+
+
+def _prepare_conversion_tracking(
+    *,
+    url: str,
+    trigger_channel: str,
+    rerun_of_task_id: str | None,
+    task_id: str | None,
+) -> tuple[str, str]:
+    source_type = detect_source_type(url)
+    task_store = get_task_history_store()
+    task_record = task_store.get_task(task_id) if task_id else None
+    if task_record is None:
+        task_record = task_store.create_task(
+            trigger_channel=trigger_channel,
+            source_type=source_type,
+            source_url=url,
+            rerun_of_task_id=rerun_of_task_id,
+        )
+        task_id = str(task_record["task_id"])
+    else:
+        task_id = str(task_record["task_id"])
+    task_store.update_task(task_id, status="queued", source_type=source_type, source_url=url, error_message="")
+    get_sync_store().upsert_article(
+        {
+            "article_url": url,
+            "source_type": source_type,
+            "fetch_status": "queued",
+            "process_status": "queued",
+            "last_task_id": task_id,
+            "last_error": "",
+            "cache_key": build_source_cache_key(url),
+        }
+    )
+    return task_id, source_type
+
+
+def _mark_conversion_dispatch_failure(
+    *,
+    url: str,
+    task_id: str,
+    source_type: str,
+    error: Exception,
+) -> None:
+    message = str(error)
+    get_task_history_store().update_task(
+        task_id,
+        status="error",
+        source_type=source_type,
+        error_message=message,
+    )
+    get_sync_store().update_article_status(
+        url,
+        fetch_status="error",
+        process_status="error",
+        last_task_id=task_id,
+        last_error=message,
+    )
 
 
 class JobStore:
@@ -134,17 +367,17 @@ class JobStore:
             url = str(item.get("url") or "").strip()
             task_id = str(item.get("task_id") or "").strip() or None
             try:
-                conversion = _run_single_conversion(
+                conversion = execute_single_conversion(
                     url=url,
                     timeout=timeout,
                     save_html=save_html,
                     output_target=output_target,
                     ai_enabled=ai_enabled,
                     require_ai_success=require_ai_success,
+                    trigger_channel="web",
+                    task_id=task_id,
                     batch_workspace_root=output_dir if output_target != "fns" else None,
                     workspace_prefix=f"batch-{job_id[:8]}",
-                    task_id=task_id,
-                    trigger_channel="web",
                 )
                 self._append_result(
                     job_id,
@@ -203,19 +436,55 @@ def execute_single_conversion(
     trigger_channel: str = "web",
     rerun_of_task_id: str | None = None,
     task_id: str | None = None,
+    *,
+    batch_workspace_root: Path | None = None,
+    workspace_prefix: str = "single",
 ) -> dict[str, Any]:
-    return _run_single_conversion(
+    settings = get_settings()
+    normalized_timeout = int(timeout or settings.default_timeout)
+    effective_task_id, source_type = _prepare_conversion_tracking(
         url=url,
-        timeout=int(timeout or get_settings().default_timeout),
-        save_html=save_html,
-        output_target=output_target,
-        ai_enabled=ai_enabled,
-        require_ai_success=require_ai_success,
-        workspace_prefix="single",
-        task_id=task_id,
         trigger_channel=trigger_channel,
         rerun_of_task_id=rerun_of_task_id,
+        task_id=task_id,
     )
+    try:
+        if settings.single_conversion_isolation_enabled:
+            return _run_single_conversion_isolated(
+                url=url,
+                timeout=normalized_timeout,
+                save_html=save_html,
+                output_target=output_target,
+                ai_enabled=ai_enabled,
+                require_ai_success=require_ai_success,
+                batch_workspace_root=batch_workspace_root,
+                workspace_prefix=workspace_prefix,
+                task_id=effective_task_id,
+                trigger_channel=trigger_channel,
+                rerun_of_task_id=rerun_of_task_id,
+                hard_timeout_seconds=settings.single_conversion_hard_timeout_seconds,
+            )
+        return _run_single_conversion(
+            url=url,
+            timeout=normalized_timeout,
+            save_html=save_html,
+            output_target=output_target,
+            ai_enabled=ai_enabled,
+            require_ai_success=require_ai_success,
+            batch_workspace_root=batch_workspace_root,
+            workspace_prefix=workspace_prefix,
+            task_id=effective_task_id,
+            trigger_channel=trigger_channel,
+            rerun_of_task_id=rerun_of_task_id,
+        )
+    except Exception as error:
+        _mark_conversion_dispatch_failure(
+            url=url,
+            task_id=effective_task_id,
+            source_type=source_type,
+            error=error,
+        )
+        raise
 
 
 def _run_single_conversion(
@@ -233,6 +502,7 @@ def _run_single_conversion(
     rerun_of_task_id: str | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
+    sync_store = get_sync_store()
     normalized_target = build_output_target(output_target, settings)
     normalized_timeout = int(timeout or settings.default_timeout)
     normalized_ai_enabled = resolve_ai_enabled(ai_enabled, settings)
@@ -249,6 +519,24 @@ def _run_single_conversion(
         )
         task_id = str(task_record["task_id"])
     task_store.update_task(task_id, status="running", source_type=source_type, source_url=url)
+    fetch_meta: dict[str, Any] = {
+        "fetch_status": "queued",
+        "content_kind": "unknown",
+        "comment_id": "",
+        "failure_reason": "",
+        "cache_hit": False,
+    }
+    artifacts: list[dict[str, Any]] = []
+    sync_store.upsert_article(
+        {
+            "article_url": url,
+            "source_type": source_type,
+            "fetch_status": "queued",
+            "process_status": "running",
+            "last_task_id": task_id,
+            "cache_key": build_source_cache_key(url),
+        }
+    )
 
     workspace: Path | None = None
     output_dir = batch_workspace_root or normalize_output_dir(None)
@@ -257,26 +545,23 @@ def _run_single_conversion(
         output_dir = workspace
 
     try:
-        if source_type == "wechat":
-            result = run_pipeline(
-                url=url,
-                output_base_dir=output_dir,
-                save_html=save_html,
-                timeout=normalized_timeout,
-            )
-        else:
-            resolved_source_type, article, source_html = fetch_article_from_url(
-                url,
-                timeout=normalized_timeout,
-            )
-            result = run_article_pipeline(
-                article=article,
-                output_base_dir=output_dir,
-                save_html=save_html,
-                timeout=normalized_timeout,
-                source_html=source_html,
-            )
-            source_type = resolved_source_type
+        resolved_source_type, article, source_html, fetch_meta = fetch_article_from_url(
+            url,
+            timeout=normalized_timeout,
+        )
+        result = run_pipeline(
+            article=article,
+            output_base_dir=output_dir,
+            save_html=save_html,
+            timeout=normalized_timeout,
+            source_html=source_html,
+        )
+        source_type = resolved_source_type
+        result["fetch_status"] = str(fetch_meta.get("fetch_status") or "success")
+        result["content_kind"] = str(fetch_meta.get("content_kind") or "unknown")
+        result["comment_id"] = str(fetch_meta.get("comment_id") or "")
+        result["cache_hit"] = bool(fetch_meta.get("cache_hit"))
+        result["failure_reason"] = str(fetch_meta.get("failure_reason") or "")
         result.setdefault("image_mode", settings.image_mode)
         ai_polish = {
             "enabled": normalized_ai_enabled,
@@ -306,6 +591,44 @@ def _run_single_conversion(
                 message = str(ai_polish.get("message") or "模板未成功应用")
                 raise RuntimeError(f"AI 润色失败：{message}")
         sync = sync_result_to_output(result, output_target=normalized_target)
+        artifacts = _record_conversion_artifacts(
+            url=url,
+            result=result,
+            fetch_meta=fetch_meta,
+            sync=sync,
+        )
+        ingested_at = _utc_now() if normalized_target == "fns" else ""
+        markdown_path = Path(str(result.get("markdown_file") or ""))
+        content_hash = (
+            hashlib.sha256(markdown_path.read_bytes()).hexdigest()
+            if markdown_path.exists()
+            else ""
+        )
+        sync_store.upsert_article(
+            {
+                "article_url": url,
+                "source_type": source_type,
+                "account_name": str(result.get("account_name") or ""),
+                "title": str(result.get("title") or ""),
+                "author": str(result.get("author") or ""),
+                "content_kind": str(fetch_meta.get("content_kind") or "unknown"),
+                "fetch_status": str(fetch_meta.get("fetch_status") or "success"),
+                "process_status": "success",
+                "is_ingested": normalized_target == "fns",
+                "cleaned_at": _utc_now(),
+                "ingested_at": ingested_at,
+                "last_task_id": task_id,
+                "last_error": "",
+                "comment_id": str(fetch_meta.get("comment_id") or ""),
+                "cache_key": str(fetch_meta.get("cache_key") or build_source_cache_key(url)),
+                "cache_hit_count": 1 if fetch_meta.get("cache_hit") else 0,
+                "raw_html_path": str(fetch_meta.get("source_html_path") or ""),
+                "normalized_json_path": str(fetch_meta.get("normalized_path") or ""),
+                "latest_markdown_path": str(result.get("markdown_file") or ""),
+                "content_hash": content_hash,
+                "publish_time": int(result.get("publish_time") or 0),
+            }
+        )
         local_artifacts = {"retained": False, "workdir": None}
         if workspace is not None:
             if settings.cleanup_temp_on_success:
@@ -321,6 +644,13 @@ def _run_single_conversion(
             error_message="",
         )
     except Exception as error:
+        sync_store.update_article_status(
+            url,
+            fetch_status=str(fetch_meta.get("fetch_status") or "error"),
+            process_status="error",
+            last_task_id=task_id,
+            last_error=str(error),
+        )
         if task_id:
             task_store.update_task(
                 task_id,
@@ -340,7 +670,39 @@ def _run_single_conversion(
         "sync": sync,
         "local_artifacts": local_artifacts,
         "ai_polish": ai_polish,
+        "fetch_status": str(fetch_meta.get("fetch_status") or "success"),
+        "content_kind": str(fetch_meta.get("content_kind") or "unknown"),
+        "cache_hit": bool(fetch_meta.get("cache_hit")),
+        "failure_reason": str(fetch_meta.get("failure_reason") or ""),
+        "artifacts": artifacts,
     }
+
+
+def _record_conversion_artifacts(
+    *,
+    url: str,
+    result: dict[str, Any],
+    fetch_meta: dict[str, Any],
+    sync: dict[str, Any],
+) -> list[dict[str, Any]]:
+    store = get_sync_store()
+    recorded: list[dict[str, Any]] = []
+    html_path = str(fetch_meta.get("source_html_path") or "").strip()
+    normalized_path = str(fetch_meta.get("normalized_path") or "").strip()
+    markdown_path = str(result.get("markdown_file") or "").strip()
+    rendered_html_path = str(result.get("html_file") or "").strip()
+    sync_path = str(sync.get("path") or "").strip()
+    if html_path:
+        recorded.append(store.record_artifact(url, "source_html", html_path))
+    if normalized_path:
+        recorded.append(store.record_artifact(url, "normalized_json", normalized_path))
+    if markdown_path:
+        recorded.append(store.record_artifact(url, "markdown", markdown_path))
+    if rendered_html_path:
+        recorded.append(store.record_artifact(url, "rendered_html", rendered_html_path))
+    if sync_path:
+        recorded.append(store.record_artifact(url, "fns_note", sync_path))
+    return recorded
 
 
 def ensure_runtime_environment() -> None:
@@ -375,6 +737,324 @@ def parse_links(urls: list[str] | None = None, urls_text: str | None = None, fil
             deduped.append(item)
             seen.add(item)
     return deduped
+
+
+def build_sync_config_payload() -> dict[str, Any]:
+    settings = get_settings()
+    return {
+        "wechat_mp_configured": settings.wechat_mp_configured,
+        "wechat_mp_token_configured": bool(settings.wechat_mp_token),
+        "wechat_mp_token_masked": "*" * 8 if settings.wechat_mp_token else "",
+        "wechat_mp_cookie_configured": bool(settings.wechat_mp_cookie),
+        "wechat_mp_cookie_masked": _mask_cookie(settings.wechat_mp_cookie),
+    }
+
+
+def check_wechat_mp_login_status(http_session=None) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.wechat_mp_configured:
+        return {
+            "configured": False,
+            "valid": False,
+            "message": "公众号后台 token / cookie 未配置",
+        }
+    client = WechatMPClient(http_session=http_session)
+    return client.check_login_status()
+
+
+def search_wechat_accounts(keyword: str, *, begin: int = 0, size: int = 5, http_session=None) -> dict[str, Any]:
+    client = WechatMPClient(http_session=http_session)
+    return client.search_accounts(keyword=keyword, begin=begin, size=size)
+
+
+def list_sync_sources_payload() -> dict[str, Any]:
+    return {"items": get_sync_store().list_sync_sources()}
+
+
+def create_sync_source(payload: dict[str, Any]) -> dict[str, Any]:
+    fakeid = str(payload.get("fakeid") or "").strip()
+    if not fakeid:
+        raise ValueError("fakeid 不能为空")
+    store = get_sync_store()
+    account = store.upsert_account(
+        {
+            "fakeid": fakeid,
+            "nickname": str(payload.get("nickname") or "").strip(),
+            "alias": str(payload.get("alias") or "").strip(),
+            "round_head_img": str(payload.get("round_head_img") or "").strip(),
+            "service_type": int(payload.get("service_type") or 0),
+            "signature": str(payload.get("signature") or "").strip(),
+        }
+    )
+    source = store.create_or_update_sync_source(fakeid)
+    return {"account": account, "source": source}
+
+
+def delete_sync_source(source_id: str) -> None:
+    get_sync_store().delete_sync_source(source_id)
+
+
+def sync_source_articles(
+    *,
+    source_id: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    queue_for_ingest: bool = False,
+    ai_enabled: bool = False,
+    output_target: str = "fns",
+    skip_ingested: bool = True,
+    http_session=None,
+) -> dict[str, Any]:
+    store = get_sync_store()
+    source = store.get_sync_source(source_id)
+    if source is None:
+        raise ValueError("同步源不存在")
+
+    if start_date and end_date:
+        sync_range = parse_sync_range(start_date, end_date)
+        mode = "manual"
+    else:
+        latest_update_time = int(source.get("latest_article_update_time") or 0)
+        if not latest_update_time:
+            raise ValueError("首次同步必须显式提供开始和结束日期")
+        start_dt = datetime.fromtimestamp(latest_update_time + 1, tz=timezone.utc).date().isoformat()
+        end_dt = datetime.now(timezone.utc).date().isoformat()
+        sync_range = parse_sync_range(start_dt, end_dt)
+        mode = "incremental"
+
+    run = store.create_sync_run(
+        source["id"],
+        mode=mode,
+        range_start=sync_range.start_date,
+        range_end=sync_range.end_date,
+    )
+    client = WechatMPClient(http_session=http_session)
+    fetched_count = 0
+    new_count = 0
+    updated_count = 0
+    article_ids: list[str] = []
+    begin = 0
+    latest_publish = int(source.get("latest_article_update_time") or 0)
+    try:
+        while True:
+            payload = client.fetch_articles(source["account_fakeid"], begin=begin, size=10)
+            items = payload.get("items") if isinstance(payload.get("items"), list) else []
+            if not items:
+                break
+            fetched_count += len(items)
+            stop_after_page = False
+            for item in items:
+                publish_time = int(item.get("publish_time") or item.get("create_time") or 0)
+                if publish_time and publish_time < sync_range.start_ts:
+                    stop_after_page = True
+                    continue
+                if publish_time and publish_time > sync_range.end_ts:
+                    continue
+                article, is_new = store.upsert_article(
+                    {
+                        "article_url": str(item.get("article_url") or "").strip(),
+                        "source_type": "wechat",
+                        "account_fakeid": str(source.get("account_fakeid") or "").strip(),
+                        "account_name": str(source.get("account_name") or "").strip(),
+                        "title": str(item.get("title") or "").strip(),
+                        "author": str(item.get("author") or "").strip(),
+                        "digest": str(item.get("digest") or "").strip(),
+                        "cover": str(item.get("cover") or "").strip(),
+                        "publish_time": publish_time,
+                        "create_time": int(item.get("create_time") or 0),
+                        "content_kind": str(item.get("content_kind") or "article"),
+                        "fetch_status": "indexed",
+                        "process_status": "pending",
+                    }
+                )
+                if is_new:
+                    new_count += 1
+                else:
+                    updated_count += 1
+                latest_publish = max(latest_publish, publish_time)
+                article_ids.append(str(article.get("id") or ""))
+            if stop_after_page:
+                break
+            begin += len(items)
+        now = _utc_now()
+        store.update_sync_source_state(
+            source["id"],
+            last_sync_at=now,
+            last_range_start=sync_range.start_date,
+            last_range_end=sync_range.end_date,
+            latest_article_update_time=latest_publish,
+        )
+        queued_count = 0
+        ingest_job = None
+        if queue_for_ingest and article_ids:
+            ingest_job = submit_article_ingest(
+                article_ids=article_ids,
+                ai_enabled=ai_enabled,
+                output_target=output_target,
+                skip_ingested=skip_ingested,
+            )
+            queued_count = int(ingest_job.get("total") or 0)
+        store.finish_sync_run(
+            run["id"],
+            status="completed",
+            fetched_count=fetched_count,
+            new_count=new_count,
+            updated_count=updated_count,
+            queued_count=queued_count,
+        )
+        return {
+            "run_id": run["id"],
+            "status": "completed",
+            "fetched_count": fetched_count,
+            "new_count": new_count,
+            "updated_count": updated_count,
+            "queued_count": queued_count,
+            "ingest_job": ingest_job,
+        }
+    except Exception as error:
+        store.finish_sync_run(
+            run["id"],
+            status="error",
+            fetched_count=fetched_count,
+            new_count=new_count,
+            updated_count=updated_count,
+            queued_count=0,
+            error_message=str(error),
+        )
+        raise
+
+
+def list_sync_articles(
+    *,
+    account_fakeid: str | None = None,
+    process_status: str | None = None,
+    is_ingested: bool | None = None,
+    published_from: int | None = None,
+    published_to: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    return get_sync_store().list_articles(
+        account_fakeid=account_fakeid,
+        process_status=process_status,
+        is_ingested=is_ingested,
+        published_from=published_from,
+        published_to=published_to,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def submit_article_ingest(
+    *,
+    article_ids: list[str],
+    ai_enabled: bool,
+    output_target: str,
+    skip_ingested: bool,
+) -> dict[str, Any]:
+    store = get_sync_store()
+    filtered_ids = [str(item).strip() for item in article_ids if str(item).strip()]
+    if not filtered_ids:
+        raise ValueError("article_ids 不能为空")
+    job = store.create_ingest_job(
+        total=len(filtered_ids),
+        ai_enabled=ai_enabled,
+        output_target=output_target,
+        skip_ingested=skip_ingested,
+    )
+    _ingest_executor.submit(
+        _run_ingest_job,
+        job["id"],
+        filtered_ids,
+        ai_enabled,
+        output_target,
+        skip_ingested,
+    )
+    return job
+
+
+def get_ingest_job(job_id: str) -> dict[str, Any] | None:
+    return get_sync_store().get_ingest_job(job_id)
+
+
+def _run_ingest_job(job_id: str, article_ids: list[str], ai_enabled: bool, output_target: str, skip_ingested: bool) -> None:
+    store = get_sync_store()
+    store.update_ingest_job(job_id, status="running")
+    completed = 0
+    success_count = 0
+    failure_count = 0
+    last_error = ""
+    for article_id in article_ids:
+        article = store.get_article_by_id(article_id)
+        if article is None:
+            completed += 1
+            failure_count += 1
+            last_error = "文章不存在"
+            store.update_ingest_job(
+                job_id,
+                completed=completed,
+                success_count=success_count,
+                failure_count=failure_count,
+                error_message=last_error,
+            )
+            continue
+        if skip_ingested and bool(article.get("is_ingested")):
+            completed += 1
+            success_count += 1
+            store.update_article_status(
+                str(article.get("article_url") or ""),
+                process_status="success",
+                last_error="",
+            )
+            store.update_ingest_job(
+                job_id,
+                completed=completed,
+                success_count=success_count,
+                failure_count=failure_count,
+            )
+            continue
+        store.update_article_status(str(article.get("article_url") or ""), process_status="running", last_error="")
+        try:
+            execute_single_conversion(
+                url=str(article.get("article_url") or ""),
+                timeout=get_settings().default_timeout,
+                save_html=False,
+                output_target=output_target,
+                ai_enabled=ai_enabled,
+                require_ai_success=bool(ai_enabled),
+                trigger_channel="web",
+                task_id=None,
+            )
+            completed += 1
+            success_count += 1
+        except Exception as error:
+            completed += 1
+            failure_count += 1
+            last_error = str(error)
+        store.update_ingest_job(
+            job_id,
+            completed=completed,
+            success_count=success_count,
+            failure_count=failure_count,
+            error_message=last_error if failure_count else "",
+        )
+    store.update_ingest_job(
+        job_id,
+        status="completed" if failure_count == 0 else "error",
+        completed=completed,
+        success_count=success_count,
+        failure_count=failure_count,
+        error_message=last_error if failure_count else "",
+    )
+
+
+def _mask_cookie(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    if len(text) <= 12:
+        return "*" * len(text)
+    return f"{text[:6]}...{text[-6:]}"
 
 
 def list_tasks(
@@ -412,17 +1092,17 @@ def submit_rerun_task(task_id: str) -> dict[str, Any]:
         rerun_of_task_id=task_id,
     )
     _rerun_executor.submit(
-        _run_single_conversion,
+        execute_single_conversion,
         url=url,
         timeout=get_settings().default_timeout,
         save_html=False,
         output_target="fns" if get_settings().fns_enabled else "local",
         ai_enabled=None,
         require_ai_success=True,
-        workspace_prefix="rerun",
-        task_id=str(rerun_task["task_id"]),
         trigger_channel=trigger_channel,
         rerun_of_task_id=task_id,
+        task_id=str(rerun_task["task_id"]),
+        workspace_prefix="rerun",
     )
     return {"task_id": str(rerun_task["task_id"]), "rerun_of_task_id": task_id}
 
@@ -1068,4 +1748,5 @@ job_store = JobStore()
 _telegram_executor = ThreadPoolExecutor(max_workers=2)
 _feishu_executor = ThreadPoolExecutor(max_workers=2)
 _rerun_executor = ThreadPoolExecutor(max_workers=2)
+_ingest_executor = ThreadPoolExecutor(max_workers=2)
 _feishu_token_cache: dict[str, dict[str, Any]] = {}

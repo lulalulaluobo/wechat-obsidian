@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文章库 — Wechat MD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="logo">Wechat <span>MD</span></div>
+    <a class="nav-item" href="/">转换</a>
+    <a class="nav-item" href="/tasks">任务历史</a>
+    <a class="nav-item" href="/sync">同步源</a>
+    <a class="nav-item active" href="/articles">文章库</a>
+    <a class="nav-item" href="/settings">设置</a>
+    <button id="logout-btn" class="nav-item logout">退出</button>
+  </nav>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>文章库</h1>
+      <p>查看已同步到本地索引的公众号文章，按状态筛选，并批量加入清洗/润色/入库队列。</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">筛选与批量操作</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="filter-account">公众号</label>
+          <select id="filter-account"><option value="">全部</option></select>
+        </div>
+        <div class="field">
+          <label for="filter-process-status">处理状态</label>
+          <select id="filter-process-status">
+            <option value="">全部</option>
+            <option value="pending">待处理</option>
+            <option value="running">处理中</option>
+            <option value="success">成功</option>
+            <option value="error">失败</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filter-ingested">入库状态</label>
+          <select id="filter-ingested">
+            <option value="">全部</option>
+            <option value="true">已入库</option>
+            <option value="false">未入库</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="filter-start-date">发布时间开始</label>
+          <input id="filter-start-date" type="date">
+        </div>
+        <div class="field">
+          <label for="filter-end-date">发布时间结束</label>
+          <input id="filter-end-date" type="date">
+        </div>
+      </div>
+      <label class="check-row" style="margin-top:8px;">
+        <input id="ingest-ai-enabled" type="checkbox">
+        批量入队时启用 AI 润色
+      </label>
+      <label class="check-row" style="margin-top:8px;">
+        <input id="ingest-skip-ingested" type="checkbox" checked>
+        跳过已入库文章
+      </label>
+      <div class="action-row">
+        <button id="refresh-articles" class="btn btn-secondary">刷新列表</button>
+        <button id="ingest-selected" class="btn btn-primary">批量加入处理队列</button>
+      </div>
+      <div id="articles-result-area"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">文章列表</h2>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px 8px;">选择</th>
+              <th style="text-align:left; padding:10px 8px;">标题</th>
+              <th style="text-align:left; padding:10px 8px;">公众号</th>
+              <th style="text-align:left; padding:10px 8px;">发布时间</th>
+              <th style="text-align:left; padding:10px 8px;">抓取状态</th>
+              <th style="text-align:left; padding:10px 8px;">处理状态</th>
+              <th style="text-align:left; padding:10px 8px;">入库</th>
+              <th style="text-align:left; padding:10px 8px;">链接</th>
+            </tr>
+          </thead>
+          <tbody id="articles-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js"></script>
+  <script>
+    const state = { items: [], sources: [], ingestJobId: "" };
+
+    function dateToTimestamp(inputId, isEnd) {
+      const value = document.getElementById(inputId).value;
+      if (!value) return null;
+      const suffix = isEnd ? "T23:59:59Z" : "T00:00:00Z";
+      return Math.floor(new Date(`${value}${suffix}`).getTime() / 1000);
+    }
+
+    function formatTimestamp(value) {
+      if (!value) return "-";
+      return new Date(value * 1000).toLocaleString("zh-CN", { hour12: false });
+    }
+
+    function renderAccountsFilter() {
+      const select = document.getElementById("filter-account");
+      select.innerHTML = `<option value="">全部</option>` + state.sources.map((item) => `<option value="${item.account_fakeid}">${AdminUI.escapeHtml(item.account_name || item.account_fakeid || "-")}</option>`).join("");
+    }
+
+    function renderArticleRows() {
+      const body = document.getElementById("articles-table-body");
+      body.innerHTML = "";
+      state.items.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td style="padding:10px 8px;"><input type="checkbox" class="article-selector" value="${AdminUI.escapeHtml(item.id)}"></td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.title || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.account_name || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(formatTimestamp(item.publish_time))}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.fetch_status || "-")}</td>
+          <td style="padding:10px 8px;">${AdminUI.escapeHtml(item.process_status || "-")}</td>
+          <td style="padding:10px 8px;">${item.is_ingested ? "已入库" : "未入库"}</td>
+          <td style="padding:10px 8px;"><a href="${AdminUI.escapeHtml(item.article_url || "#")}" target="_blank" rel="noreferrer">查看链接</a></td>
+        `;
+        body.appendChild(row);
+      });
+    }
+
+    async function loadSources() {
+      const res = await fetch("/api/sync/sources");
+      const data = await res.json();
+      state.sources = data.items || [];
+      renderAccountsFilter();
+    }
+
+    async function loadArticles() {
+      const params = new URLSearchParams();
+      const accountFakeid = document.getElementById("filter-account").value;
+      const processStatus = document.getElementById("filter-process-status").value;
+      const ingested = document.getElementById("filter-ingested").value;
+      const startTs = dateToTimestamp("filter-start-date", false);
+      const endTs = dateToTimestamp("filter-end-date", true);
+      if (accountFakeid) params.set("account_fakeid", accountFakeid);
+      if (processStatus) params.set("process_status", processStatus);
+      if (ingested) params.set("is_ingested", ingested);
+      if (startTs != null) params.set("published_from", String(startTs));
+      if (endTs != null) params.set("published_to", String(endTs));
+      params.set("limit", "200");
+      const res = await fetch(`/api/sync/articles?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "文章列表加载失败", "error");
+        return;
+      }
+      state.items = data.items || [];
+      renderArticleRows();
+    }
+
+    async function pollIngestJob(jobId) {
+      state.ingestJobId = jobId;
+      const res = await fetch(`/api/sync/ingest-jobs/${jobId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        return;
+      }
+      AdminUI.setHtml("articles-result-area", AdminUI.resultHtml({
+        title: "批量入库任务",
+        tone: data.status === "completed" ? "success" : data.status === "error" ? "warn" : "info",
+        description: `已完成 ${data.completed || 0}/${data.total || 0}，成功 ${data.success_count || 0}，失败 ${data.failure_count || 0}。`,
+        json: data,
+      }));
+      if (data.status === "running" || data.status === "queued") {
+        setTimeout(() => pollIngestJob(jobId), 1500);
+      } else {
+        await loadArticles();
+      }
+    }
+
+    document.getElementById("ingest-selected").addEventListener("click", async () => {
+      const articleIds = Array.from(document.querySelectorAll(".article-selector:checked")).map((node) => node.value);
+      if (!articleIds.length) {
+        AdminUI.toast("请先选择文章", "warn");
+        return;
+      }
+      const res = await fetch("/api/sync/articles/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          article_ids: articleIds,
+          ai_enabled: document.getElementById("ingest-ai-enabled").checked,
+          output_target: "fns",
+          skip_ingested: document.getElementById("ingest-skip-ingested").checked,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        AdminUI.toast(data.detail || "批量入队失败", "error");
+        return;
+      }
+      AdminUI.toast("批量入队已创建", "success");
+      await pollIngestJob(data.id);
+    });
+
+    document.getElementById("refresh-articles").addEventListener("click", loadArticles);
+    document.getElementById("filter-account").addEventListener("change", loadArticles);
+    document.getElementById("filter-process-status").addEventListener("change", loadArticles);
+    document.getElementById("filter-ingested").addEventListener("change", loadArticles);
+    document.getElementById("filter-start-date").addEventListener("change", loadArticles);
+    document.getElementById("filter-end-date").addEventListener("change", loadArticles);
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await fetch("/api/session", { method: "DELETE" });
+      window.location.href = "/login";
+    });
+
+    loadSources().then(loadArticles);
+  </script>
+</body>
+</html>

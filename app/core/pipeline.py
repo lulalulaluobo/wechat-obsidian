@@ -45,22 +45,23 @@ INVALID_LINK_PATTERNS = (
     "#",
 )
 
-WECHAT_NOISE_PATTERNS = [
-    re.compile(r"^预览时标签不可点$"),
-    re.compile(r"^继续滑动看下一个$"),
-    re.compile(r"^微信扫一扫关注该公众号$"),
-    re.compile(r"^轻触阅读原文$"),
-    re.compile(r"^原创.*在小说阅读器中沉浸阅读$"),
-    re.compile(r"^以下文章来源于.*$"),
-    re.compile(r"^作者 \| .*$"),
-]
+WECHAT_NOISE_LINES = (
+    "预览时标签不可点",
+    "继续滑动看下一个",
+    "微信扫一扫关注该公众号",
+    "轻触阅读原文",
+)
 
-PROMOTION_SECTION_PATTERNS = [
-    re.compile(r'^(?:#{1,6}\s*)?(?:[\W_]+\s*)*福利领取(?:\b.*)?$', re.IGNORECASE),
-    re.compile(r'^(?:#{1,6}\s*)?(?:[\W_]+\s*)*(?:AI\s*)?编程实战小课(?:\b.*)?$', re.IGNORECASE),
-    re.compile(r'^(?:#{1,6}\s*)?(?:[\W_]+\s*)*(?:加入\s*)?.*(?:交流群|社群|社区)(?:\b.*)?$', re.IGNORECASE),
-    re.compile(r'^(?:#{1,6}\s*)?(?:[\W_]+\s*)*(?:阅读更多|推荐阅读|相关阅读)(?:\b.*)?$', re.IGNORECASE),
-]
+PROMOTION_SECTION_KEYWORDS = (
+    "福利领取",
+    "编程实战小课",
+    "交流群",
+    "社群",
+    "社区",
+    "阅读更多",
+    "推荐阅读",
+    "相关阅读",
+)
 
 PROMOTION_LINE_PATTERNS = [
     re.compile(r'点个.*(?:关注|在看)', re.IGNORECASE),
@@ -137,6 +138,33 @@ def normalize_inline_text(value: str) -> str:
     value = value.replace('\xa0', ' ')
     value = re.sub(r'\s+', ' ', value)
     return value.strip()
+
+
+def _normalize_heading_candidate(value: str) -> str:
+    normalized = normalize_inline_text(value)
+    normalized = re.sub(r'^(?:#{1,6}\s*)?', '', normalized)
+    normalized = re.sub(r'^[\W_]+', '', normalized)
+    return normalized.strip()
+
+
+def _is_wechat_noise_line(line: str) -> bool:
+    normalized = normalize_inline_text(line)
+    if not normalized:
+        return False
+    if normalized in WECHAT_NOISE_LINES:
+        return True
+    return (
+        normalized.startswith('原创')
+        and '在小说阅读器中沉浸阅读' in normalized
+    ) or normalized.startswith('以下文章来源于') or normalized.startswith('作者 | ')
+
+
+def _is_promotion_section_heading(line: str) -> bool:
+    normalized = _normalize_heading_candidate(line)
+    if not normalized:
+        return False
+    compact = re.sub(r'\s+', '', normalized).casefold()
+    return any(keyword.casefold() in compact for keyword in PROMOTION_SECTION_KEYWORDS)
 
 
 class WeChatArticlePipeline:
@@ -907,7 +935,7 @@ def format_markdown(markdown: str, markdown_dir: Path) -> tuple[str, Dict[str, o
             stripped = line
             pending_heading_level = None
 
-        if any(pattern.match(stripped) for pattern in WECHAT_NOISE_PATTERNS):
+        if _is_wechat_noise_line(stripped):
             summary['removed_noise_lines'] = int(summary['removed_noise_lines']) + 1
             continue
 
@@ -1252,7 +1280,7 @@ def _remove_promotional_content(markdown: str, summary: Dict[str, object]) -> st
                     pending_blank = 1 if stripped == '' else 0
                     continue
 
-        if any(pattern.match(stripped) for pattern in PROMOTION_SECTION_PATTERNS):
+        if _is_promotion_section_heading(stripped):
             summary['removed_promotion_blocks'] = int(summary['removed_promotion_blocks']) + 1
             skipping_block = True
             skip_level = _heading_level(stripped) or 6

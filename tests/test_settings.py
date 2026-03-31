@@ -88,6 +88,30 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(runtime_data["user_settings"]["image_storage"]["bucket"], "bucket-a")
         self.assertNotIn("secret-1", runtime_text)
 
+    def test_runtime_config_encrypts_wechat_mp_credentials(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                save_runtime_config(
+                    {
+                        "wechat_mp_token": "mp-token",
+                        "wechat_mp_cookie": "ua=1; bizuin=2; pass_ticket=3",
+                    }
+                )
+                settings = get_settings()
+                runtime_text = runtime_path.read_text(encoding="utf-8")
+
+        self.assertTrue(settings.wechat_mp_configured)
+        self.assertEqual(settings.wechat_mp_token, "mp-token")
+        self.assertIn("token_encrypted", runtime_text)
+        self.assertIn("cookie_encrypted", runtime_text)
+        self.assertNotIn("mp-token", runtime_text)
+
     def test_runtime_config_uses_env_admin_password_on_first_init(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_path = Path(temp_dir) / "runtime-config.json"

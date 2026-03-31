@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -32,6 +33,7 @@ class AIPolishTests(unittest.TestCase):
                 "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
                 "WECHAT_MD_ADMIN_USERNAME": "admin",
                 "WECHAT_MD_ADMIN_PASSWORD": "admin",
+                "WECHAT_MD_SINGLE_CONVERSION_ISOLATION_ENABLED": "false",
             },
             clear=False,
         )
@@ -103,16 +105,37 @@ class AIPolishTests(unittest.TestCase):
     def test_execute_single_conversion_degrades_when_ai_polish_fails(self):
         markdown_path = Path(self.temp_dir.name) / "article.md"
         markdown_path.write_text("# 标题\n\n正文", encoding="utf-8")
-        with patch("app.services.run_pipeline", return_value={"title": "标题", "author": "作者", "original_url": "https://mp.weixin.qq.com/s/example", "markdown_file": str(markdown_path), "folder_name": "01_标题", "image_mode": "wechat_hotlink"}):
-            with patch("app.services.sync_result_to_output", return_value={"status": "success", "target": "local", "markdown_file": str(markdown_path)}):
-                with patch("app.services.apply_ai_polish_to_result", side_effect=RuntimeError("ai failed")):
-                    payload = execute_single_conversion(
-                        url="https://mp.weixin.qq.com/s/example",
-                        timeout=30,
-                        save_html=False,
-                        output_target="local",
-                        ai_enabled=True,
-                    )
+        with patch(
+            "app.services.fetch_article_from_url",
+            return_value=(
+                "wechat",
+                SimpleNamespace(
+                    title="标题",
+                    author="作者",
+                    account_name="",
+                    content_html="<p>正文</p>",
+                    original_url="https://mp.weixin.qq.com/s/example",
+                ),
+                "<html></html>",
+                {
+                    "fetch_status": "success",
+                    "content_kind": "article",
+                    "comment_id": "",
+                    "cache_hit": False,
+                    "failure_reason": "",
+                },
+            ),
+        ):
+            with patch("app.services.run_pipeline", return_value={"title": "标题", "author": "作者", "original_url": "https://mp.weixin.qq.com/s/example", "markdown_file": str(markdown_path), "folder_name": "01_标题", "image_mode": "wechat_hotlink"}):
+                with patch("app.services.sync_result_to_output", return_value={"status": "success", "target": "local", "markdown_file": str(markdown_path)}):
+                    with patch("app.services.apply_ai_polish_to_result", side_effect=RuntimeError("ai failed")):
+                        payload = execute_single_conversion(
+                            url="https://mp.weixin.qq.com/s/example",
+                            timeout=30,
+                            save_html=False,
+                            output_target="local",
+                            ai_enabled=True,
+                        )
 
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["ai_polish"]["status"], "failed")
@@ -150,27 +173,48 @@ class AIPolishTests(unittest.TestCase):
     def test_execute_single_conversion_raises_without_sync_when_ai_is_required_for_bot(self):
         markdown_path = Path(self.temp_dir.name) / "article-required.md"
         markdown_path.write_text("# 标题\n\n正文", encoding="utf-8")
-        with patch("app.services.run_pipeline", return_value={"title": "标题", "author": "作者", "original_url": "https://mp.weixin.qq.com/s/example", "markdown_file": str(markdown_path), "folder_name": "01_标题", "image_mode": "wechat_hotlink"}):
-            with patch("app.services.sync_result_to_output") as mocked_sync:
-                with patch(
-                    "app.services.apply_ai_polish_to_result",
-                    return_value={
-                        "enabled": True,
-                        "status": "failed",
-                        "template_applied": False,
-                        "content_polished": False,
-                        "message": "模板未成功应用",
-                    },
-                ):
-                    with self.assertRaisesRegex(RuntimeError, "AI 润色失败"):
-                        execute_single_conversion(
-                            url="https://mp.weixin.qq.com/s/example",
-                            timeout=30,
-                            save_html=False,
-                            output_target="local",
-                            ai_enabled=True,
-                            require_ai_success=True,
-                        )
+        with patch(
+            "app.services.fetch_article_from_url",
+            return_value=(
+                "wechat",
+                SimpleNamespace(
+                    title="标题",
+                    author="作者",
+                    account_name="",
+                    content_html="<p>正文</p>",
+                    original_url="https://mp.weixin.qq.com/s/example",
+                ),
+                "<html></html>",
+                {
+                    "fetch_status": "success",
+                    "content_kind": "article",
+                    "comment_id": "",
+                    "cache_hit": False,
+                    "failure_reason": "",
+                },
+            ),
+        ):
+            with patch("app.services.run_pipeline", return_value={"title": "标题", "author": "作者", "original_url": "https://mp.weixin.qq.com/s/example", "markdown_file": str(markdown_path), "folder_name": "01_标题", "image_mode": "wechat_hotlink"}):
+                with patch("app.services.sync_result_to_output") as mocked_sync:
+                    with patch(
+                        "app.services.apply_ai_polish_to_result",
+                        return_value={
+                            "enabled": True,
+                            "status": "failed",
+                            "template_applied": False,
+                            "content_polished": False,
+                            "message": "模板未成功应用",
+                        },
+                    ):
+                        with self.assertRaisesRegex(RuntimeError, "AI 润色失败"):
+                            execute_single_conversion(
+                                url="https://mp.weixin.qq.com/s/example",
+                                timeout=30,
+                                save_html=False,
+                                output_target="local",
+                                ai_enabled=True,
+                                require_ai_success=True,
+                            )
 
         mocked_sync.assert_not_called()
 

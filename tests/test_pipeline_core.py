@@ -270,6 +270,27 @@ class MarkdownStructureTests(unittest.TestCase):
         self.assertIn("原文链接:", formatted)
         self.assertEqual(summary.get("removed_promotion_blocks"), 1)
 
+    def test_format_markdown_handles_long_promotion_heading_without_hanging(self):
+        module = load_pipeline_module()
+        long_heading = "## " + ("A" * 20000) + "加入读书社区"
+        markdown = f"""# 标题
+
+正文保留。
+
+{long_heading}
+
+推广文案。
+
+原文链接: [https://mp.weixin.qq.com/s/example](https://mp.weixin.qq.com/s/example)
+"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            formatted, summary = module.format_markdown(markdown, Path(temp_dir))
+
+        self.assertIn("正文保留。", formatted)
+        self.assertNotIn("加入读书社区", formatted)
+        self.assertEqual(summary.get("removed_promotion_blocks"), 1)
+
     def test_format_markdown_converts_single_backtick_blocks_without_swallowing_following_prose(self):
         module = load_pipeline_module()
         markdown = """实际效果：我在 Claude.ai 里说“创建一个每天采集 AI 资讯的工作流”，Claude 自动执行了这条链条：`

@@ -37,6 +37,7 @@ class ApiTests(unittest.TestCase):
                 "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
                 "WECHAT_MD_ADMIN_USERNAME": "admin",
                 "WECHAT_MD_ADMIN_PASSWORD": "admin",
+                "WECHAT_MD_SINGLE_CONVERSION_ISOLATION_ENABLED": "false",
             },
             clear=False,
         )
@@ -223,12 +224,21 @@ class ApiTests(unittest.TestCase):
                 "fns_target_dir": "00_Inbox/微信公众号",
             }
             self.client.put("/api/admin/settings", json=payload)
-            with patch("app.services.run_pipeline", return_value=fake_result):
-                with patch("app.services.sync_result_to_output", return_value=fake_sync) as mocked_sync:
-                    response = self.client.post(
-                        "/api/convert",
-                        json={"url": "https://mp.weixin.qq.com/s/example"},
-                    )
+            with patch(
+                "app.services.fetch_article_from_url",
+                return_value=(
+                    "wechat",
+                    SimpleNamespace(title="示例", author="", account_name="", content_html="<p>正文</p>", original_url="https://mp.weixin.qq.com/s/example"),
+                    "<html></html>",
+                    {"fetch_status": "success", "content_kind": "article", "comment_id": "", "cache_hit": False, "failure_reason": ""},
+                ),
+            ):
+                with patch("app.services.run_article_pipeline", return_value=fake_result):
+                    with patch("app.services.sync_result_to_output", return_value=fake_sync) as mocked_sync:
+                        response = self.client.post(
+                            "/api/convert",
+                            json={"url": "https://mp.weixin.qq.com/s/example"},
+                        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -251,7 +261,7 @@ class ApiTests(unittest.TestCase):
         )
         captured: dict[str, Path] = {}
 
-        def fake_run_pipeline(url, output_base_dir, save_html, timeout):
+        def fake_run_article_pipeline(article, output_base_dir, save_html, timeout, source_html):
             base_dir = Path(output_base_dir)
             captured["base_dir"] = base_dir
             article_dir = base_dir / "01_示例"
@@ -265,15 +275,24 @@ class ApiTests(unittest.TestCase):
                 "output_dir": str(article_dir),
             }
 
-        with patch("app.services.run_pipeline", side_effect=fake_run_pipeline):
-            with patch(
-                "app.services.sync_result_to_output",
-                return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
-            ):
-                response = self.client.post(
-                    "/api/convert",
-                    json={"url": "https://mp.weixin.qq.com/s/example"},
-                )
+        with patch(
+            "app.services.fetch_article_from_url",
+            return_value=(
+                "wechat",
+                SimpleNamespace(title="示例", author="", account_name="", content_html="<p>正文</p>", original_url="https://mp.weixin.qq.com/s/example"),
+                "<html></html>",
+                {"fetch_status": "success", "content_kind": "article", "comment_id": "", "cache_hit": False, "failure_reason": ""},
+            ),
+        ):
+            with patch("app.services.run_article_pipeline", side_effect=fake_run_article_pipeline):
+                with patch(
+                    "app.services.sync_result_to_output",
+                    return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
+                ):
+                    response = self.client.post(
+                        "/api/convert",
+                        json={"url": "https://mp.weixin.qq.com/s/example"},
+                    )
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("workdir", str(captured["base_dir"]))
@@ -294,7 +313,7 @@ class ApiTests(unittest.TestCase):
         )
         captured: dict[str, Path] = {}
 
-        def fake_run_pipeline(url, output_base_dir, save_html, timeout):
+        def fake_run_article_pipeline(article, output_base_dir, save_html, timeout, source_html):
             base_dir = Path(output_base_dir)
             captured["base_dir"] = base_dir
             article_dir = base_dir / "01_示例"
@@ -308,20 +327,56 @@ class ApiTests(unittest.TestCase):
                 "output_dir": str(article_dir),
             }
 
-        with patch("app.services.run_pipeline", side_effect=fake_run_pipeline):
-            with patch(
-                "app.services.sync_result_to_output",
-                return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
-            ):
-                response = self.client.post(
-                    "/api/convert",
-                    json={"url": "https://mp.weixin.qq.com/s/example"},
-                )
+        with patch(
+            "app.services.fetch_article_from_url",
+            return_value=(
+                "wechat",
+                SimpleNamespace(title="示例", author="", account_name="", content_html="<p>正文</p>", original_url="https://mp.weixin.qq.com/s/example"),
+                "<html></html>",
+                {"fetch_status": "success", "content_kind": "article", "comment_id": "", "cache_hit": False, "failure_reason": ""},
+            ),
+        ):
+            with patch("app.services.run_article_pipeline", side_effect=fake_run_article_pipeline):
+                with patch(
+                    "app.services.sync_result_to_output",
+                    return_value={"status": "success", "target": "fns", "path": "00_Inbox/微信公众号/示例.md"},
+                ):
+                    response = self.client.post(
+                        "/api/convert",
+                        json={"url": "https://mp.weixin.qq.com/s/example"},
+                    )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(captured["base_dir"].exists())
         self.assertIn("workdir", str(captured["base_dir"]))
         shutil.rmtree(captured["base_dir"], ignore_errors=True)
+
+    def test_sync_config_api_masks_sensitive_fields(self):
+        self._login()
+        response = self.client.put(
+            "/api/sync/config",
+            json={
+                "wechat_mp_token": "mp-token",
+                "wechat_mp_cookie": "ua=1; bizuin=2; pass_ticket=3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        config = self.client.get("/api/sync/config").json()
+        self.assertTrue(config["wechat_mp_token_configured"])
+        self.assertTrue(config["wechat_mp_cookie_configured"])
+
+    def test_sync_source_api_creates_and_lists_source(self):
+        self._login()
+        create_response = self.client.post(
+            "/api/sync/sources",
+            json={"fakeid": "fakeid-1", "nickname": "示例公众号", "alias": "demo"},
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        list_response = self.client.get("/api/sync/sources")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["items"][0]["account_fakeid"], "fakeid-1")
 
     def test_batch_from_text(self):
         self._login()
