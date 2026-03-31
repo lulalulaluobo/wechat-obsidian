@@ -1,6 +1,6 @@
 services:
   wechat-md-server:
-    image: your-namespace/wechat-md-server:latest
+    image: your-namespace/wc-md-ob:v1.0
     container_name: wechat-md-server
     user: "0:0"
     restart: unless-stopped
