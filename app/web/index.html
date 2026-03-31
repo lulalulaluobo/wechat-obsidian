@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/admin.css?v=20260331d">
+  <link rel="stylesheet" href="/assets/admin.css?v=20260331f">
 </head>
 <body>
   <!-- Top Nav -->
@@ -17,7 +17,7 @@
     <a class="nav-item" href="/sync">同步源</a>
     <a class="nav-item" href="/articles">文章库</a>
     <a class="nav-item" href="/settings">设置</a>
-    <button id="logout-btn" class="nav-item logout">退出</button>
+    <div class="theme-switcher"><button class="theme-btn" id="theme-toggle" title="切换主题"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button><div class="theme-dropdown hidden" id="theme-dropdown"><button class="theme-option" data-theme-value="warm-minimal"><span class="theme-dot" style="background:#3D8B5E;"></span>Warm Minimal<span class="theme-check">&#10003;</span></button><button class="theme-option" data-theme-value="terracotta"><span class="theme-dot" style="background:#C67B5C;"></span>Terracotta<span class="theme-check">&#10003;</span></button><button class="theme-option" data-theme-value="ocean-dark"><span class="theme-dot" style="background:#EA580C;"></span>Ocean Dark<span class="theme-check">&#10003;</span></button><button class="theme-option" data-theme-value="ink"><span class="theme-dot" style="background:#2563EB;"></span>Ink<span class="theme-check">&#10003;</span></button></div></div><button id="logout-btn" class="nav-item logout">退出</button>
   </nav>
 
   <div class="page">
@@ -135,9 +135,8 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=20260331d"></script>
+  <script src="/assets/admin.js?v=20260331f"></script>
   <script>
-    AdminUI.initAdvancedToggles();
 
     function imageModeLabel(mode) {
       return mode === "s3_hotlink" ? "S3 图床外链" : "微信原链";

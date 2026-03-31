@@ -115,6 +115,45 @@
     });
   }
 
+  /* ── Theme System ── */
+  function initTheme() {
+    var toggle = document.getElementById("theme-toggle");
+    var dropdown = document.getElementById("theme-dropdown");
+    if (!toggle || !dropdown) return;
+
+    var saved = localStorage.getItem("wechat-md-theme") || "warm-minimal";
+    applyTheme(saved);
+
+    toggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      dropdown.classList.toggle("hidden");
+    });
+
+    dropdown.querySelectorAll(".theme-option").forEach(function (opt) {
+      opt.addEventListener("click", function () {
+        var theme = opt.getAttribute("data-theme-value");
+        applyTheme(theme);
+        localStorage.setItem("wechat-md-theme", theme);
+        dropdown.classList.add("hidden");
+      });
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!dropdown.contains(e.target) && e.target !== toggle) {
+        dropdown.classList.add("hidden");
+      }
+    });
+  }
+
+  function applyTheme(name) {
+    document.documentElement.setAttribute("data-theme", name);
+    var dropdown = document.getElementById("theme-dropdown");
+    if (!dropdown) return;
+    dropdown.querySelectorAll(".theme-option").forEach(function (opt) {
+      opt.classList.toggle("active", opt.getAttribute("data-theme-value") === name);
+    });
+  }
+
   /* ── Export ── */
   window.AdminUI = {
     escapeHtml,
@@ -128,5 +167,13 @@
     buildJsonHeaders,
     initAdvancedToggles,
     initTabs,
+    initTheme,
   };
+
+  /* ── Auto-init on DOMContentLoaded ── */
+  document.addEventListener("DOMContentLoaded", function () {
+    initTheme();
+    initAdvancedToggles();
+    initTabs();
+  });
 })();
