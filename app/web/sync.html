@@ -62,29 +62,8 @@
       <p class="card-desc">这里只做索引增量同步，不直接执行清洗、AI 或入库。</p>
       <div class="field-row">
         <div class="field">
-          <label for="source-sync-frequency">频率</label>
-          <select id="source-sync-frequency">
-            <option value="daily">每日</option>
-            <option value="weekly">每周</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="source-sync-time">时间</label>
-          <input id="source-sync-time" type="time" value="00:00">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" id="source-sync-weekday-field">
-          <label for="source-sync-day-of-week">每周</label>
-          <select id="source-sync-day-of-week">
-            <option value="1">周一</option>
-            <option value="2">周二</option>
-            <option value="3">周三</option>
-            <option value="4">周四</option>
-            <option value="5">周五</option>
-            <option value="6">周六</option>
-            <option value="7">周日</option>
-          </select>
+          <label for="source-sync-interval">运行间隔（小时）</label>
+          <input id="source-sync-interval" type="number" min="1" max="720" value="24" placeholder="例如，24 小时代表每天">
         </div>
       </div>
       <label class="check-row" style="margin-bottom:12px;">
@@ -167,6 +146,41 @@
   <script>
     const clearFields = new Set();
     const state = { searchItems: [], sources: [], schedules: {}, qrSessionId: "" };
+    let syncCountdownInterval = null;
+
+    function updateSyncCountdown() {
+      const schedule = state.schedules.source_sync_schedule;
+      const el = document.getElementById("dynamic-source-countdown");
+      if (!el) return;
+      if (!schedule || !schedule.enabled) {
+         el.textContent = "未开启自动执行";
+         return;
+      }
+      const interval_hours = schedule.interval_hours || 24;
+      if (!schedule.last_run_at) {
+         el.textContent = "暂无可用的历史记录（将很快触发）";
+         return;
+      }
+      const lastRun = new Date(schedule.last_run_at).getTime();
+      const intervalMs = interval_hours * 3600 * 1000;
+      const nextRun = lastRun + intervalMs;
+      const now = Date.now();
+      if (now >= nextRun) {
+         el.textContent = "已到达时间，等待后台调度执行...";
+         return;
+      }
+      const diffMs = nextRun - now;
+      const h = Math.floor(diffMs / 3600000);
+      const m = Math.floor((diffMs % 3600000) / 60000).toString().padStart(2, '0');
+      const s = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, '0');
+      el.textContent = `${h}时 ${m}分 ${s}秒`;
+    }
+
+    function startSyncCountdown() {
+      if (syncCountdownInterval) clearInterval(syncCountdownInterval);
+      updateSyncCountdown();
+      syncCountdownInterval = setInterval(updateSyncCountdown, 1000);
+    }
 
     function formatLocalDateTime(value) {
       if (!value) return "-";
@@ -319,25 +333,22 @@
     function renderSourceSchedule(schedule) {
       if (!schedule) return;
       document.getElementById("source-sync-enabled").checked = Boolean(schedule.enabled);
-      document.getElementById("source-sync-frequency").value = schedule.frequency || "daily";
-      document.getElementById("source-sync-time").value = schedule.time_of_day || "00:00";
-      document.getElementById("source-sync-day-of-week").value = String(schedule.day_of_week || 1);
-      syncScheduleFieldVisibility();
+      document.getElementById("source-sync-interval").value = String(schedule.interval_hours || 24);
       AdminUI.setHtml("source-sync-schedule-area", AdminUI.resultHtml({
         title: schedule.enabled ? "同步计划已启用" : "同步计划未启用",
         tone: schedule.enabled ? "success" : "info",
         items: [
-          { label: "频率", value: schedule.frequency || "-" },
+          { label: "执行间隔", value: `${schedule.interval_hours || 24} 小时` },
           { label: "最近执行", value: formatLocalDateTime(schedule.last_run_at) },
           { label: "最近状态", value: schedule.last_status || "-" },
         ],
         json: schedule.recent_runs || [],
       }));
-    }
-
-    function syncScheduleFieldVisibility() {
-      const isWeekly = document.getElementById("source-sync-frequency").value === "weekly";
-      document.getElementById("source-sync-weekday-field").classList.toggle("hidden", !isWeekly);
+      const resultItems = document.querySelector("#source-sync-schedule-area .result-items");
+      if (resultItems) {
+         resultItems.insertAdjacentHTML("beforeend", `<div class="result-item"><span class="label">下次执行还剩</span><span class="value" id="dynamic-source-countdown" style="font-variant-numeric: tabular-nums; color: var(--color-primary); font-weight: bold;">计算中...</span></div>`);
+      }
+      startSyncCountdown();
     }
 
     async function loadSchedules() {
@@ -491,10 +502,7 @@
       const payload = {
         source_sync_schedule: {
           enabled: document.getElementById("source-sync-enabled").checked,
-          frequency: document.getElementById("source-sync-frequency").value,
-          time_of_day: document.getElementById("source-sync-time").value || "00:00",
-          day_of_week: Number(document.getElementById("source-sync-day-of-week").value || "1"),
-          timezone: "Asia/Shanghai",
+          interval_hours: Number(document.getElementById("source-sync-interval").value) || 24,
         },
       };
       const res = await fetch("/api/admin/schedules", {
@@ -508,6 +516,7 @@
         return;
       }
       AdminUI.toast("同步计划已保存", "success");
+      state.schedules.source_sync_schedule = data.source_sync_schedule || null;
       renderSourceSchedule(data.source_sync_schedule || null);
     });
 
@@ -523,7 +532,7 @@
       document.getElementById("wechat-mp-cookie-meta").textContent = "保存时将清空 Cookie";
     });
 
-    document.getElementById("source-sync-frequency").addEventListener("change", syncScheduleFieldVisibility);
+
 
     document.getElementById("logout-btn").addEventListener("click", async () => {
       await fetch("/api/session", { method: "DELETE" });
@@ -533,7 +542,6 @@
     loadSyncConfig();
     loadSources();
     loadSchedules();
-    syncScheduleFieldVisibility();
   </script>
 </body>
 </html>

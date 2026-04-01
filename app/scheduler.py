@@ -77,20 +77,25 @@ def _is_due(payload: dict[str, object]) -> bool:
                 return False
         except ValueError:
             pass
-    scheduled = _scheduled_time_for_now(now, payload)
-    if scheduled is None or now < scheduled:
-        return False
+            
     last_run_at = str(payload.get("last_run_at") or "").strip()
-    if not last_run_at:
-        return True
     try:
         last_run = datetime.fromisoformat(last_run_at)
         if last_run.tzinfo is None:
             last_run = last_run.replace(tzinfo=timezone.utc)
+        last_run = last_run.astimezone(zone)
     except ValueError:
         return True
-    return last_run.astimezone(zone) < scheduled
 
+    interval_hours = int(payload.get("interval_hours") or 0)
+    if interval_hours > 0:
+        from datetime import timedelta
+        return now >= last_run + timedelta(hours=interval_hours)
+
+    scheduled = _scheduled_time_for_now(now, payload)
+    if scheduled is None or now < scheduled:
+        return False
+    return last_run < scheduled
 
 def _scheduled_time_for_now(now: datetime, payload: dict[str, object]) -> datetime | None:
     frequency = str(payload.get("frequency") or "daily")

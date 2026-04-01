@@ -88,29 +88,8 @@
       <p class="card-desc">只处理文章库中“未执行”的文章；是否启用 AI 仍由设置页全局配置决定。</p>
       <div class="field-row">
         <div class="field">
-          <label for="article-ingest-frequency">频率</label>
-          <select id="article-ingest-frequency">
-            <option value="daily">每日</option>
-            <option value="weekly">每周</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="article-ingest-time">时间</label>
-          <input id="article-ingest-time" type="time" value="00:00">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" id="article-ingest-weekday-field">
-          <label for="article-ingest-day-of-week">每周</label>
-          <select id="article-ingest-day-of-week">
-            <option value="1">周一</option>
-            <option value="2">周二</option>
-            <option value="3">周三</option>
-            <option value="4">周四</option>
-            <option value="5">周五</option>
-            <option value="6">周六</option>
-            <option value="7">周日</option>
-          </select>
+          <label for="article-ingest-interval">运行间隔（小时）</label>
+          <input id="article-ingest-interval" type="number" min="1" max="720" value="24" placeholder="例如，24 小时代表每天">
         </div>
       </div>
       <label class="check-row" style="margin-bottom:12px;">
@@ -156,6 +135,41 @@
   <script>
     const state = { items: [], sources: [], ingestJobId: "", schedules: {}, filteredSelection: false };
     const initialParams = new URLSearchParams(window.location.search);
+    let ingestCountdownInterval = null;
+
+    function updateIngestCountdown() {
+      const schedule = state.schedules.article_ingest_schedule;
+      const el = document.getElementById("dynamic-article-countdown");
+      if (!el) return;
+      if (!schedule || !schedule.enabled) {
+         el.textContent = "未开启自动执行";
+         return;
+      }
+      const interval_hours = schedule.interval_hours || 24;
+      if (!schedule.last_run_at) {
+         el.textContent = "暂无可用的历史记录（将很快触发）";
+         return;
+      }
+      const lastRun = new Date(schedule.last_run_at).getTime();
+      const intervalMs = interval_hours * 3600 * 1000;
+      const nextRun = lastRun + intervalMs;
+      const now = Date.now();
+      if (now >= nextRun) {
+         el.textContent = "已到达时间，等待后台调度执行...";
+         return;
+      }
+      const diffMs = nextRun - now;
+      const h = Math.floor(diffMs / 3600000);
+      const m = Math.floor((diffMs % 3600000) / 60000).toString().padStart(2, '0');
+      const s = Math.floor((diffMs % 60000) / 1000).toString().padStart(2, '0');
+      el.textContent = `${h}时 ${m}分 ${s}秒`;
+    }
+
+    function startIngestCountdown() {
+       if (ingestCountdownInterval) clearInterval(ingestCountdownInterval);
+       updateIngestCountdown();
+       ingestCountdownInterval = setInterval(updateIngestCountdown, 1000);
+    }
 
     function dateToTimestamp(inputId, isEnd) {
       const value = document.getElementById(inputId).value;
@@ -212,25 +226,22 @@
     function renderSchedule(schedule) {
       if (!schedule) return;
       document.getElementById("article-ingest-enabled").checked = Boolean(schedule.enabled);
-      document.getElementById("article-ingest-frequency").value = schedule.frequency || "daily";
-      document.getElementById("article-ingest-time").value = schedule.time_of_day || "00:00";
-      document.getElementById("article-ingest-day-of-week").value = String(schedule.day_of_week || 1);
-      syncScheduleFieldVisibility();
+      document.getElementById("article-ingest-interval").value = String(schedule.interval_hours || 24);
       AdminUI.setHtml("article-ingest-schedule-area", AdminUI.resultHtml({
         title: schedule.enabled ? "执行计划已启用" : "执行计划未启用",
         tone: schedule.enabled ? "success" : "info",
         items: [
-          { label: "频率", value: schedule.frequency || "-" },
+          { label: "执行间隔", value: `${schedule.interval_hours || 24} 小时` },
           { label: "最近执行", value: formatLocalDateTime(schedule.last_run_at) },
           { label: "最近状态", value: schedule.last_status || "-" },
         ],
         json: schedule.recent_runs || [],
       }));
-    }
-
-    function syncScheduleFieldVisibility() {
-      const isWeekly = document.getElementById("article-ingest-frequency").value === "weekly";
-      document.getElementById("article-ingest-weekday-field").classList.toggle("hidden", !isWeekly);
+      const resultItems = document.querySelector("#article-ingest-schedule-area .result-items");
+      if (resultItems) {
+         resultItems.insertAdjacentHTML("beforeend", `<div class="result-item"><span class="label">下次执行还剩</span><span class="value" id="dynamic-article-countdown" style="font-variant-numeric: tabular-nums; color: var(--color-primary); font-weight: bold;">计算中...</span></div>`);
+      }
+      startIngestCountdown();
     }
 
     function renderArticleRows() {
@@ -438,10 +449,7 @@
         body: JSON.stringify({
           article_ingest_schedule: {
             enabled: document.getElementById("article-ingest-enabled").checked,
-            frequency: document.getElementById("article-ingest-frequency").value,
-            time_of_day: document.getElementById("article-ingest-time").value || "00:00",
-            day_of_week: Number(document.getElementById("article-ingest-day-of-week").value || "1"),
-            timezone: "Asia/Shanghai",
+            interval_hours: Number(document.getElementById("article-ingest-interval").value) || 24,
           },
         }),
       });
@@ -451,6 +459,7 @@
         return;
       }
       AdminUI.toast("执行计划已保存", "success");
+      state.schedules.article_ingest_schedule = data.article_ingest_schedule || null;
       renderSchedule(data.article_ingest_schedule || null);
     });
 
@@ -461,7 +470,7 @@
     document.getElementById("filter-has-execution").addEventListener("change", loadArticles);
     document.getElementById("filter-start-date").addEventListener("change", loadArticles);
     document.getElementById("filter-end-date").addEventListener("change", loadArticles);
-    document.getElementById("article-ingest-frequency").addEventListener("change", syncScheduleFieldVisibility);
+
     document.getElementById("logout-btn").addEventListener("click", async () => {
       await fetch("/api/session", { method: "DELETE" });
       window.location.href = "/login";
@@ -469,7 +478,6 @@
 
     loadSources().then(loadArticles);
     loadSchedules();
-    syncScheduleFieldVisibility();
   </script>
 </body>
 </html>

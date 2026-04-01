@@ -1259,18 +1259,31 @@ class SyncStore:
             key = str(payload.get("key") or "")
             if key in defaults:
                 payload["enabled"] = bool(payload.get("enabled"))
+                freq = str(payload.get("frequency") or "")
+                if freq.startswith("interval_"):
+                    try:
+                        payload["interval_hours"] = int(freq.split("_", 1)[1])
+                    except ValueError:
+                        payload["interval_hours"] = 24
+                else:
+                    payload["interval_hours"] = 24
                 defaults[key] = payload
         return defaults
 
     def upsert_scheduler_config(self, key: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.initialize()
         current = self.get_scheduler_configs().get(str(key), {})
+        
+        freq = str(payload.get("frequency") or current.get("frequency") or "daily")
+        if "interval_hours" in payload:
+            freq = f"interval_{payload['interval_hours']}"
+            
         normalized = {
             **current,
             **payload,
             "key": str(key),
             "enabled": _normalize_bool(payload.get("enabled", current.get("enabled", False))),
-            "frequency": str(payload.get("frequency") or current.get("frequency") or "daily"),
+            "frequency": freq,
             "day_of_week": int(payload.get("day_of_week", current.get("day_of_week", -1)) or -1),
             "day_of_month": int(payload.get("day_of_month", current.get("day_of_month", -1)) or -1),
             "time_of_day": str(payload.get("time_of_day") or current.get("time_of_day") or "09:00"),

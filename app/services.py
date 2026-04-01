@@ -1188,6 +1188,18 @@ def create_sync_source(payload: dict[str, Any]) -> dict[str, Any]:
 def delete_sync_source(source_id: str) -> None:
     get_sync_store().delete_sync_source(source_id)
 
+def _validate_sync_source_run(*, source_id: str, start_date: str | None = None, end_date: str | None = None) -> None:
+    store = get_sync_store()
+    source = store.get_sync_source(source_id)
+    if source is None:
+        raise ValueError("同步源不存在")
+    if start_date and end_date:
+        parse_sync_range(start_date, end_date)
+    else:
+        latest_update_time = int(source.get("latest_article_update_time") or 0)
+        if not latest_update_time:
+            raise ValueError("首次同步必须显式提供开始和结束日期")
+
 
 def sync_source_articles(
     *,

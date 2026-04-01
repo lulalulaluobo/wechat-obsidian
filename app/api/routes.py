@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Cookie, File, Header, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, File, Header, HTTPException, Request, Response, UploadFile, BackgroundTasks
 
 from app.auth import (
     SESSION_COOKIE_NAME,
@@ -607,19 +607,28 @@ async def delete_sync_source_route(
 async def post_sync_source_run(
     source_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
     _require_access(session_cookie)
     _require_csrf(request)
     payload = await _read_convert_payload(request)
     try:
-        return sync_source_articles(
+        from app.services import _validate_sync_source_run
+        _validate_sync_source_run(
+            source_id=source_id,
+            start_date=str(payload.get("start_date") or "").strip() or None,
+            end_date=str(payload.get("end_date") or "").strip() or None,
+        )
+        background_tasks.add_task(
+            sync_source_articles,
             source_id=source_id,
             start_date=str(payload.get("start_date") or "").strip() or None,
             end_date=str(payload.get("end_date") or "").strip() or None,
             output_target=str(payload.get("output_target") or build_output_target(None)).strip(),
             skip_ingested=_parse_bool(payload.get("skip_ingested")) if payload.get("skip_ingested") is not None else True,
         )
+        return {"status": "queued", "message": "已进入后台拉取进程，请稍后刷新页面查看最新文章。"}
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
