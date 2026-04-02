@@ -156,6 +156,7 @@ class Settings:
     telegram_notify_on_complete: bool = DEFAULT_TELEGRAM_NOTIFY_ON_COMPLETE
     telegram_webhook_status: str = "inactive"
     telegram_webhook_message: str = ""
+    telegram_image_mode: str | None = None
     feishu_enabled: bool = False
     feishu_app_id: str | None = None
     feishu_app_secret: str | None = None
@@ -166,6 +167,7 @@ class Settings:
     feishu_notify_on_complete: bool = DEFAULT_FEISHU_NOTIFY_ON_COMPLETE
     feishu_webhook_status: str = "inactive"
     feishu_webhook_message: str = ""
+    feishu_image_mode: str | None = None
     ai_enabled: bool = False
     ai_providers: tuple[dict[str, Any], ...] = ()
     ai_models: tuple[dict[str, Any], ...] = ()
@@ -452,6 +454,9 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
     if "telegram_allowed_chat_ids" in payload:
         telegram_settings["allowed_chat_ids"] = _normalize_chat_ids(payload.get("telegram_allowed_chat_ids"))
 
+    if "telegram_image_mode" in payload:
+        telegram_settings["image_mode"] = _normalize_entry_image_mode(payload.get("telegram_image_mode"))
+
     for field in FEISHU_BOOL_FIELDS:
         if field not in payload:
             continue
@@ -478,6 +483,9 @@ def save_runtime_config(payload: dict[str, Any], clear_fields: list[str] | None 
 
     if "feishu_allowed_open_ids" in payload:
         feishu_settings["allowed_open_ids"] = _normalize_identifier_list(payload.get("feishu_allowed_open_ids"))
+
+    if "feishu_image_mode" in payload:
+        feishu_settings["image_mode"] = _normalize_entry_image_mode(payload.get("feishu_image_mode"))
 
     if "wechat_mp_token" in payload and payload.get("wechat_mp_token") is not None:
         wechat_mp_settings["token"] = str(payload.get("wechat_mp_token") or "").strip()
@@ -705,6 +713,7 @@ def build_admin_settings_payload() -> dict[str, Any]:
         "telegram_notify_on_complete": settings.telegram_notify_on_complete,
         "telegram_webhook_status": settings.telegram_webhook_status,
         "telegram_webhook_message": settings.telegram_webhook_message,
+        "telegram_image_mode": settings.telegram_image_mode or "",
         "feishu_enabled": settings.feishu_enabled,
         "feishu_app_id": settings.feishu_app_id or "",
         "feishu_app_secret_configured": bool(settings.feishu_app_secret),
@@ -719,6 +728,7 @@ def build_admin_settings_payload() -> dict[str, Any]:
         "feishu_notify_on_complete": settings.feishu_notify_on_complete,
         "feishu_webhook_status": settings.feishu_webhook_status,
         "feishu_webhook_message": settings.feishu_webhook_message,
+        "feishu_image_mode": settings.feishu_image_mode or "",
         "wechat_mp_configured": settings.wechat_mp_configured,
         "wechat_mp_token_configured": bool(settings.wechat_mp_token),
         "wechat_mp_token_masked": _mask_secret(settings.wechat_mp_token),
@@ -820,6 +830,7 @@ def get_settings() -> Settings:
     )
     telegram_webhook_status = str(telegram.get("webhook_status") or "inactive").strip() or "inactive"
     telegram_webhook_message = str(telegram.get("webhook_message") or "").strip()
+    telegram_image_mode = str(telegram.get("image_mode") or "").strip() or None
     feishu_enabled = _as_bool(feishu.get("enabled"), default=False)
     feishu_app_id = str(feishu.get("app_id") or os.environ.get("WECHAT_MD_FEISHU_APP_ID") or "").strip() or None
     feishu_app_secret = str(feishu.get("app_secret") or os.environ.get("WECHAT_MD_FEISHU_APP_SECRET") or "").strip() or None
@@ -837,6 +848,7 @@ def get_settings() -> Settings:
     )
     feishu_webhook_status = str(feishu.get("webhook_status") or "inactive").strip() or "inactive"
     feishu_webhook_message = str(feishu.get("webhook_message") or "").strip()
+    feishu_image_mode = str(feishu.get("image_mode") or "").strip() or None
     wechat_mp_token = str(wechat_mp.get("token") or os.environ.get("WECHAT_MD_WECHAT_MP_TOKEN") or "").strip() or None
     wechat_mp_cookie = str(wechat_mp.get("cookie") or os.environ.get("WECHAT_MD_WECHAT_MP_COOKIE") or "").strip() or None
     ai_enabled = _as_bool(runtime_user_settings.get("ai_enabled"), default=False)
@@ -887,6 +899,7 @@ def get_settings() -> Settings:
         telegram_notify_on_complete=telegram_notify_on_complete,
         telegram_webhook_status=telegram_webhook_status,
         telegram_webhook_message=telegram_webhook_message,
+        telegram_image_mode=telegram_image_mode,
         feishu_enabled=feishu_enabled,
         feishu_app_id=feishu_app_id,
         feishu_app_secret=feishu_app_secret,
@@ -897,6 +910,7 @@ def get_settings() -> Settings:
         feishu_notify_on_complete=feishu_notify_on_complete,
         feishu_webhook_status=feishu_webhook_status,
         feishu_webhook_message=feishu_webhook_message,
+        feishu_image_mode=feishu_image_mode,
         ai_enabled=ai_enabled,
         ai_providers=tuple(dict(item) for item in ai_registry.get("providers", [])),
         ai_models=tuple(dict(item) for item in ai_registry.get("models", [])),
@@ -1021,6 +1035,7 @@ def _normalize_user_settings(raw_settings: Any) -> dict[str, Any]:
             "notify_on_complete": _as_bool(telegram_source.get("notify_on_complete"), default=DEFAULT_TELEGRAM_NOTIFY_ON_COMPLETE),
             "webhook_status": str(telegram_source.get("webhook_status") or "inactive").strip() or "inactive",
             "webhook_message": str(telegram_source.get("webhook_message") or "").strip(),
+            "image_mode": _normalize_entry_image_mode(telegram_source.get("image_mode")),
         },
         "feishu": {
             "enabled": _as_bool(feishu_source.get("enabled"), default=False),
@@ -1045,6 +1060,7 @@ def _normalize_user_settings(raw_settings: Any) -> dict[str, Any]:
             "notify_on_complete": _as_bool(feishu_source.get("notify_on_complete"), default=DEFAULT_FEISHU_NOTIFY_ON_COMPLETE),
             "webhook_status": str(feishu_source.get("webhook_status") or "inactive").strip() or "inactive",
             "webhook_message": str(feishu_source.get("webhook_message") or "").strip(),
+            "image_mode": _normalize_entry_image_mode(feishu_source.get("image_mode")),
         },
         "wechat_mp": {
             "token": _load_secret_value(
@@ -1127,6 +1143,7 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
                 "notify_on_complete": _as_bool(telegram.get("notify_on_complete"), default=DEFAULT_TELEGRAM_NOTIFY_ON_COMPLETE),
                 "webhook_status": str(telegram.get("webhook_status") or "inactive").strip() or "inactive",
                 "webhook_message": str(telegram.get("webhook_message") or "").strip(),
+                "image_mode": _normalize_entry_image_mode(telegram.get("image_mode")),
             },
             "feishu": {
                 "enabled": _as_bool(feishu.get("enabled"), default=False),
@@ -1139,6 +1156,7 @@ def _serialize_runtime_config(data: dict[str, Any]) -> dict[str, Any]:
                 "notify_on_complete": _as_bool(feishu.get("notify_on_complete"), default=DEFAULT_FEISHU_NOTIFY_ON_COMPLETE),
                 "webhook_status": str(feishu.get("webhook_status") or "inactive").strip() or "inactive",
                 "webhook_message": str(feishu.get("webhook_message") or "").strip(),
+                "image_mode": _normalize_entry_image_mode(feishu.get("image_mode")),
             },
             "wechat_mp": {
                 "token_encrypted": encrypt_secret(str(wechat_mp.get("token") or "")),
@@ -1171,6 +1189,12 @@ def _load_secret_value(
 def _normalize_image_mode(value: Any) -> str:
     normalized = str(value or DEFAULT_IMAGE_MODE).strip()
     return normalized if normalized in IMAGE_MODE_VALUES else DEFAULT_IMAGE_MODE
+
+
+def _normalize_entry_image_mode(value: Any) -> str:
+    """Normalize per-entry image mode. Returns empty string for 'follow global'."""
+    normalized = str(value or "").strip()
+    return normalized if normalized in IMAGE_MODE_VALUES else ""
 
 
 def _normalize_ai_template_source(value: Any) -> str:

@@ -164,6 +164,62 @@
             <button id="clear-s3-secret" class="btn btn-danger">清空图床密钥</button>
           </div>
         </div>
+
+        <div class="sep" style="margin:24px 0 16px;"></div>
+
+        <h3 class="card-title" style="font-size:15px; margin-bottom:4px;">Telegram Bot 图链</h3>
+        <p class="card-desc" style="margin-bottom:12px;">可单独覆盖 Bot 入口的图片处理模式，留空则跟随全局设置。</p>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="telegram-image-mode" value="">
+            <div>
+              <strong>跟随全局设置</strong>
+              <div class="desc">不单独设置，使用上方全局图片模式。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="telegram-image-mode" value="wechat_hotlink">
+            <div>
+              <strong>微信原链</strong>
+              <div class="desc">Bot 推送内容保留微信图片链接。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="telegram-image-mode" value="s3_hotlink">
+            <div>
+              <strong>S3 图床外链</strong>
+              <div class="desc">Bot 推送内容使用 S3 图床外链（静态图）。</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="sep" style="margin:24px 0 16px;"></div>
+
+        <h3 class="card-title" style="font-size:15px; margin-bottom:4px;">飞书 Bot 图链</h3>
+        <p class="card-desc" style="margin-bottom:12px;">可单独覆盖 Bot 入口的图片处理模式，留空则跟随全局设置。</p>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="feishu-image-mode" value="">
+            <div>
+              <strong>跟随全局设置</strong>
+              <div class="desc">不单独设置，使用上方全局图片模式。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="feishu-image-mode" value="wechat_hotlink">
+            <div>
+              <strong>微信原链</strong>
+              <div class="desc">Bot 推送内容保留微信图片链接。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="feishu-image-mode" value="s3_hotlink">
+            <div>
+              <strong>S3 图床外链</strong>
+              <div class="desc">Bot 推送内容使用 S3 图床外链（静态图）。</div>
+            </div>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -1200,11 +1256,13 @@
         telegram_notify_on_complete: document.getElementById("telegram-notify-on-complete").checked,
         telegram_webhook_public_base_url: document.getElementById("telegram-webhook-public-base-url").value.trim(),
         telegram_allowed_chat_ids: document.getElementById("telegram-allowed-chat-ids").value.trim(),
+        telegram_image_mode: (document.querySelector('input[name="telegram-image-mode"]:checked') || {}).value || "",
         feishu_enabled: document.getElementById("feishu-enabled").checked,
         feishu_notify_on_complete: document.getElementById("feishu-notify-on-complete").checked,
         feishu_app_id: document.getElementById("feishu-app-id").value.trim(),
         feishu_webhook_public_base_url: document.getElementById("feishu-webhook-public-base-url").value.trim(),
         feishu_allowed_open_ids: document.getElementById("feishu-allowed-open-ids").value.trim(),
+        feishu_image_mode: (document.querySelector('input[name="feishu-image-mode"]:checked') || {}).value || "",
         ai_enabled: document.getElementById("ai-enabled").checked,
         ai_allow_body_polish: document.getElementById("ai-allow-body-polish").checked,
         ai_enable_content_polish: document.getElementById("ai-enable-content-polish").checked,
@@ -1332,6 +1390,11 @@
       finally { btn.disabled = false; }
     });
 
+    function _setRadioGroup(name, value) {
+      const el = document.querySelector(`input[name="${name}"][value="${value}"]`);
+      if (el) el.checked = true;
+    }
+
     /* ── Load Settings ── */
     async function loadSettings() {
       try {
@@ -1367,6 +1430,9 @@
           ? `已配置：${data.telegram_bot_token_masked}` : "未配置";
         document.getElementById("telegram-webhook-secret-meta").textContent = data.telegram_webhook_secret_configured
           ? `已配置：${data.telegram_webhook_secret_masked}` : "未配置";
+        const tgImgMode = data.telegram_image_mode || "";
+        const tgRadio = document.querySelector(`input[name="telegram-image-mode"][value="${tgImgMode}"]`);
+        if (tgRadio) tgRadio.checked = true;
         document.getElementById("feishu-enabled").checked = Boolean(data.feishu_enabled);
         document.getElementById("feishu-notify-on-complete").checked = Boolean(data.feishu_notify_on_complete);
         document.getElementById("feishu-app-id").value = data.feishu_app_id || "";
@@ -1381,6 +1447,7 @@
           ? `已配置：${data.feishu_verification_token_masked}` : "未配置";
         document.getElementById("feishu-encrypt-key-meta").textContent = data.feishu_encrypt_key_configured
           ? `已配置：${data.feishu_encrypt_key_masked}` : "未配置";
+        _setRadioGroup("feishu-image-mode", data.feishu_image_mode || "");
         document.getElementById("ai-enabled").checked = Boolean(data.ai_enabled);
         document.getElementById("ai-allow-body-polish").checked = Boolean(data.ai_allow_body_polish);
         document.getElementById("ai-enable-content-polish").checked = Boolean(data.ai_enable_content_polish);

@@ -298,18 +298,32 @@
         AdminUI.toast(data.detail || "同步失败", "error");
         return;
       }
-      AdminUI.setHtml("sources-result-area", AdminUI.resultHtml({
-        title: "索引预览已刷新",
-        tone: "success",
-        description: `抓取 ${data.fetched_count || 0} 条，新增 ${data.new_count || 0} 条，已存在 ${data.updated_count || 0} 条，当前预览 ${data.preview_count || 0} 条。`,
-        items: [
-          { label: "同步运行 ID", value: data.run_id || "-" },
-          { label: "说明", value: data.message || "请前往文章库勾选后再执行处理" },
-          { label: "文章库预览", value: data.run_id ? `/articles?sync_run_id=${data.run_id}` : "-" },
-        ],
-        json: data,
-      }));
-      AdminUI.toast("同步预览已生成", "success");
+      if (data.status === "queued") {
+        AdminUI.setHtml("sources-result-area", AdminUI.resultHtml({
+          title: "同步已加入后台队列",
+          tone: "info",
+          description: data.message || "已进入后台拉取进程，请稍后刷新页面查看最新文章。",
+          items: [
+            { label: "状态", value: "后台异步执行中" },
+            { label: "下一步", value: "请前往文章库刷新查看新增文章" },
+          ],
+          json: data,
+        }));
+        AdminUI.toast("同步已加入后台", "info");
+      } else {
+        AdminUI.setHtml("sources-result-area", AdminUI.resultHtml({
+          title: "索引预览已刷新",
+          tone: "success",
+          description: `抓取 ${data.fetched_count || 0} 条，新增 ${data.new_count || 0} 条，已存在 ${data.updated_count || 0} 条，当前预览 ${data.preview_count || 0} 条。`,
+          items: [
+            { label: "同步运行 ID", value: data.run_id || "-" },
+            { label: "说明", value: data.message || "请前往文章库勾选后再执行处理" },
+            { label: "文章库预览", value: data.run_id ? `/articles?sync_run_id=${data.run_id}` : "-" },
+          ],
+          json: data,
+        }));
+        AdminUI.toast("同步预览已生成", "success");
+      }
       await loadSources();
     }
 

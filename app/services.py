@@ -691,7 +691,8 @@ def _run_single_conversion(
     normalized_target = build_output_target(output_target, settings)
     normalized_timeout = int(timeout or settings.default_timeout)
     normalized_ai_enabled = resolve_ai_enabled(ai_enabled, settings)
-    ensure_runtime_environment()
+    image_mode_override = _resolve_image_mode_override(trigger_channel, settings)
+    ensure_runtime_environment(image_mode_override)
     source_type = detect_source_type(url)
     article_record = sync_store.get_article_by_url(url)
     if article_record is None:
@@ -915,9 +916,19 @@ def _record_conversion_artifacts(
     return recorded
 
 
-def ensure_runtime_environment() -> None:
+def _resolve_image_mode_override(trigger_channel: str, settings) -> str | None:
+    """Return per-entry image_mode override based on trigger channel, or None to use global."""
+    if trigger_channel == "telegram":
+        return settings.telegram_image_mode or None
+    if trigger_channel == "feishu":
+        return settings.feishu_image_mode or None
+    return None
+
+
+def ensure_runtime_environment(image_mode_override: str | None = None) -> None:
     settings = get_settings()
-    os.environ["WECHAT_MD_IMAGE_MODE"] = settings.image_mode
+    effective_image_mode = image_mode_override or settings.image_mode
+    os.environ["WECHAT_MD_IMAGE_MODE"] = effective_image_mode
     os.environ["WECHAT_MD_IMAGE_STORAGE_PROVIDER"] = settings.image_storage_provider or "s3"
     os.environ["WECHAT_MD_IMAGE_STORAGE_ENDPOINT"] = settings.image_storage_endpoint or ""
     os.environ["WECHAT_MD_IMAGE_STORAGE_REGION"] = settings.image_storage_region or ""
@@ -1950,7 +1961,8 @@ def process_telegram_convert_task(url: str, chat_id: str, task_id: str | None = 
     title = str(payload["result"].get("title") or "转换完成")
     sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
     resolved_image_mode = str(
-        payload["result"].get("image_mode")
+        settings.telegram_image_mode
+        or payload["result"].get("image_mode")
         or payload.get("image_mode")
         or settings.image_mode
         or ""
@@ -2073,7 +2085,8 @@ def process_feishu_convert_task(url: str, open_id: str, task_id: str | None = No
     title = str(payload["result"].get("title") or "转换完成")
     sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
     resolved_image_mode = str(
-        payload["result"].get("image_mode")
+        settings.feishu_image_mode
+        or payload["result"].get("image_mode")
         or payload.get("image_mode")
         or settings.image_mode
         or ""
