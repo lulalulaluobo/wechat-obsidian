@@ -566,7 +566,7 @@ class SyncStore:
         columns = list(article.keys())
         with self._connect() as connection:
             existing = connection.execute(
-                "SELECT id, created_at, cache_hit_count, is_ingested, cleaned_at, ingested_at FROM articles WHERE article_url = ?",
+                "SELECT * FROM articles WHERE article_url = ?",
                 (article_url,),
             ).fetchone()
             is_new = existing is None
@@ -579,6 +579,12 @@ class SyncStore:
                     article["ingested_at"] = str(existing["ingested_at"] or "")
                 if not article["is_ingested"]:
                     article["is_ingested"] = int(existing["is_ingested"] or 0)
+                for key in ["account_fakeid", "account_name", "title", "author", "digest", "cover", "comment_id", "last_sync_run_id"]:
+                    if not article[key] and existing[key]:
+                        article[key] = str(existing[key])
+                for key in ["publish_time", "create_time"]:
+                    if not article[key] and existing[key]:
+                        article[key] = int(existing[key])
                 article["cache_hit_count"] = max(int(existing["cache_hit_count"] or 0), int(article["cache_hit_count"]))
             connection.execute(
                 f"""
