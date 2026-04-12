@@ -15,6 +15,8 @@
 
 ## 核心功能
 
+![转换中心主界面](docs/images/1775994257197.png)
+
 - 支持微信公众号文章抓取与转换
 - 支持普通网页文章抓取与转换
 - 支持单篇和批量导入
@@ -133,6 +135,8 @@ sudo ./install.sh uninstall  # 卸载（可选保留数据）
 
 打开 `http://127.0.0.1:8765/login`，使用 `.env` 中设置的管理员账号登录。
 
+![登录页面](docs/images/1775994187555.png)
+
 ### 第二步：配置 Fast Note Sync
 
 进入“设置”页面，填写 Fast Note Sync 相关信息：
@@ -150,12 +154,16 @@ sudo ./install.sh uninstall  # 卸载（可选保留数据）
 
 如果这一步没有配置完成，Markdown 虽然可以生成，但无法稳定同步到你的 Obsidian 仓库。
 
+![设置页 - FNS 同步配置](docs/images/1775994382775.png)
+
 ### 第三步：选择图片处理模式
 
 在设置页选择图片模式：
 
 - `wechat_hotlink`：部署简单，适合先跑通流程
 - `s3_hotlink`：适合追求图片长期可控和可迁移
+
+![设置页 - 图片模式](docs/images/1775994409747.png)
 
 ### 第四步：开始转换
 
@@ -166,6 +174,9 @@ sudo ./install.sh uninstall  # 卸载（可选保留数据）
 - 上传文本文件批量导入链接
 
 转换成功后，文章会按照当前配置同步到 Obsidian 对应目录。
+
+![同步结果 - Obsidian 笔记](docs/images/1775994576896.png)
+
 
 ### 第五步：查看任务结果
 
@@ -205,6 +216,8 @@ sudo ./install.sh uninstall  # 卸载（可选保留数据）
 - Ollama
 - OpenRouter
 
+![AI 润色配置](docs/images/1775994440564.png)
+
 ### Bot 接入
 
 项目支持：
@@ -213,6 +226,9 @@ sudo ./install.sh uninstall  # 卸载（可选保留数据）
 - 飞书 Bot
 
 典型流程为：发送链接 -> 服务异步转换 -> Bot 回执结果。
+
+![Telegram Bot 回执示例](docs/images/1775994505566.png)
+
 
 ## 目录结构
 
