@@ -361,6 +361,69 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(verify_password("new-secret", settings.password_hash))
         self.assertNotEqual(before["auth"]["session_secret"], updated["auth"]["session_secret"])
 
+    def test_bot_receive_modes_default_to_webhook_and_persist(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                defaults = get_settings()
+                save_runtime_config(
+                    {
+                        "deployment_mode": "nas",
+                        "telegram_enabled": True,
+                        "telegram_bot_token": "telegram-token",
+                        "telegram_receive_mode": "polling",
+                        "telegram_poll_interval": 5,
+                        "telegram_allowed_chat_ids": "123456",
+                        "feishu_enabled": True,
+                        "feishu_app_id": "cli_xxx",
+                        "feishu_app_secret": "feishu-secret",
+                        "feishu_receive_mode": "long_connection",
+                    }
+                )
+                settings = get_settings()
+                runtime_data = load_runtime_config(runtime_path)
+                runtime_text = runtime_path.read_text(encoding="utf-8")
+
+        self.assertEqual(defaults.deployment_mode, "vps")
+        self.assertEqual(defaults.telegram_receive_mode, "webhook")
+        self.assertEqual(defaults.telegram_poll_interval, 2)
+        self.assertEqual(defaults.feishu_receive_mode, "webhook")
+        self.assertEqual(settings.deployment_mode, "nas")
+        self.assertEqual(settings.telegram_receive_mode, "polling")
+        self.assertEqual(settings.telegram_poll_interval, 5)
+        self.assertEqual(settings.feishu_receive_mode, "long_connection")
+        self.assertEqual(runtime_data["user_settings"]["deployment_mode"], "nas")
+        self.assertEqual(runtime_data["user_settings"]["telegram"]["receive_mode"], "polling")
+        self.assertEqual(runtime_data["user_settings"]["telegram"]["poll_interval"], 5)
+        self.assertEqual(runtime_data["user_settings"]["feishu"]["receive_mode"], "long_connection")
+        self.assertNotIn("telegram-token", runtime_text)
+        self.assertNotIn("feishu-secret", runtime_text)
+
+    def test_receive_modes_can_be_configured_from_prd_env_aliases(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_path = Path(temp_dir) / "runtime-config.json"
+            env = {
+                "WECHAT_MD_RUNTIME_CONFIG_PATH": str(runtime_path),
+                "WECHAT_MD_APP_MASTER_KEY": "test-master-key",
+                "WECHAT_MD_ADMIN_PASSWORD": "admin",
+                "DEPLOYMENT_MODE": "local",
+                "TG_RECEIVE_MODE": "polling",
+                "TG_POLL_INTERVAL": "7",
+                "FEISHU_RECEIVE_MODE": "long_connection",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                settings = get_settings()
+
+        self.assertEqual(settings.deployment_mode, "local")
+        self.assertEqual(settings.telegram_receive_mode, "polling")
+        self.assertEqual(settings.telegram_poll_interval, 7)
+        self.assertEqual(settings.feishu_receive_mode, "long_connection")
+
 
 if __name__ == "__main__":
     unittest.main()

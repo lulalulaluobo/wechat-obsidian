@@ -20,7 +20,9 @@ from app.config import get_settings, reset_admin_credentials  # noqa: E402
 from app.services import (  # noqa: E402
     extract_single_wechat_url,
     parse_links,
+    process_feishu_long_connection_event,
     process_feishu_convert_task,
+    process_telegram_polling_update,
     process_telegram_convert_task,
 )
 
@@ -968,6 +970,47 @@ class ApiTests(unittest.TestCase):
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once_with("https://example.com/post", "123456")
 
+    def test_telegram_polling_update_uses_unified_bot_handler_metadata(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "polling", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "deployment_mode": "nas",
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "obsidian",
+                    "telegram_enabled": True,
+                    "telegram_bot_token": "telegram-token",
+                    "telegram_receive_mode": "polling",
+                    "telegram_allowed_chat_ids": "123456",
+                },
+            )
+
+        with patch("app.services.send_telegram_message") as mocked_send:
+            with patch("app.services.submit_telegram_convert_task") as mocked_submit:
+                result = process_telegram_polling_update(
+                    {
+                        "update_id": 9002,
+                        "message": {
+                            "message_id": 778,
+                            "from": {"id": 123456},
+                            "chat": {"id": 123456},
+                            "text": "https://mp.weixin.qq.com/s/example",
+                        },
+                    }
+                )
+
+        self.assertEqual(result["status"], "accepted")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with(
+            "https://mp.weixin.qq.com/s/example",
+            "123456",
+            receive_mode="polling",
+            sender_id="123456",
+            message_id="778",
+        )
+
     def test_telegram_webhook_ignores_duplicate_message(self):
         self._login()
         with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "success", "message": "registered", "webhook_url": "https://app.example.com/api/integrations/telegram/webhook"}):
@@ -1201,6 +1244,52 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "accepted")
         mocked_send.assert_called_once()
         mocked_submit.assert_called_once_with("https://mp.weixin.qq.com/s/example", "ou_123")
+
+    def test_feishu_long_connection_event_uses_unified_bot_handler_metadata(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "deployment_mode": "nas",
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_receive_mode": "long_connection",
+                    "feishu_allowed_open_ids": "ou_123",
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        with patch("app.services.send_feishu_message") as mocked_send:
+            with patch("app.services.submit_feishu_convert_task") as mocked_submit:
+                result = process_feishu_long_connection_event(
+                    {
+                        "schema": "2.0",
+                        "header": {"event_type": "im.message.receive_v1", "event_id": "evt_2001"},
+                        "event": {
+                            "message": {
+                                "message_id": "om_2001",
+                                "message_type": "text",
+                                "chat_type": "p2p",
+                                "content": "{\"text\":\"https://mp.weixin.qq.com/s/example\"}",
+                            },
+                            "sender": {"sender_id": {"open_id": "ou_123"}},
+                        },
+                    }
+                )
+
+        self.assertEqual(result["status"], "accepted")
+        mocked_send.assert_called_once()
+        mocked_submit.assert_called_once_with(
+            "https://mp.weixin.qq.com/s/example",
+            "ou_123",
+            receive_mode="long_connection",
+            sender_id="ou_123",
+            message_id="om_2001",
+        )
 
     def test_feishu_webhook_rejects_zhihu_link(self):
         self._login()

@@ -29,6 +29,14 @@
     <div class="card" style="padding:16px 20px;">
       <h2 class="card-title" style="font-size:18px; margin-bottom:10px;">配置总览</h2>
       <p class="card-desc" style="margin-bottom:12px;">统一管理同步、图片和 Telegram 触发能力。</p>
+      <div class="field" style="max-width:360px;">
+        <label for="deployment-mode">部署模式</label>
+        <select id="deployment-mode">
+          <option value="vps">VPS / 公网部署</option>
+          <option value="nas">NAS / 家庭服务器</option>
+          <option value="local">Local / 本地局域网</option>
+        </select>
+      </div>
       <h3 class="card-title" style="font-size:15px; margin-bottom:0;">连接诊断</h3>
       <p class="card-desc" style="margin-top:6px;">保存前可先检查 FNS 和 Telegram 的对外连接状态。</p>
       <div id="fns-status-result"></div>
@@ -238,20 +246,42 @@
           转换完成后发送结果通知
         </label>
 
+        <div class="radio-group" style="margin-bottom:16px;">
+          <label class="radio-option">
+            <input type="radio" name="telegram-receive-mode" value="webhook">
+            <div>
+              <strong>Webhook</strong>
+              <div class="desc">公网 VPS 或已配置反向代理时使用。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="telegram-receive-mode" value="polling">
+            <div>
+              <strong>Polling</strong>
+              <div class="desc">NAS / 本地部署主动拉取消息，无需公网 URL。</div>
+            </div>
+          </label>
+        </div>
+
         <div class="field-row">
           <div class="field">
             <label for="telegram-bot-token">Bot Token</label>
             <input id="telegram-bot-token" type="password" placeholder="留空则保持不变">
             <div class="field-hint text-muted" id="telegram-bot-token-meta"></div>
           </div>
-          <div class="field">
+          <div class="field telegram-webhook-field">
             <label for="telegram-webhook-secret">Webhook Secret</label>
             <input id="telegram-webhook-secret" type="password" placeholder="留空则保持不变">
             <div class="field-hint text-muted" id="telegram-webhook-secret-meta"></div>
           </div>
+          <div class="field telegram-polling-field hidden">
+            <label for="telegram-poll-interval">Polling 间隔秒数</label>
+            <input id="telegram-poll-interval" type="number" min="1" step="1" value="2">
+            <div class="field-hint" id="hint-telegram-poll-interval"></div>
+          </div>
         </div>
 
-        <div class="field">
+        <div class="field telegram-webhook-field">
           <label for="telegram-webhook-public-base-url">Webhook 对外基础地址</label>
           <input id="telegram-webhook-public-base-url" placeholder="https://your-domain.example.com">
           <div class="field-hint" id="hint-telegram-webhook-public-base-url"></div>
@@ -287,6 +317,23 @@
           转换完成后发送结果通知
         </label>
 
+        <div class="radio-group" style="margin-bottom:16px;">
+          <label class="radio-option">
+            <input type="radio" name="feishu-receive-mode" value="webhook">
+            <div>
+              <strong>Webhook</strong>
+              <div class="desc">公网事件订阅回调用。</div>
+            </div>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="feishu-receive-mode" value="long_connection">
+            <div>
+              <strong>长连接</strong>
+              <div class="desc">NAS / 本地部署主动保持事件连接。</div>
+            </div>
+          </label>
+        </div>
+
         <div class="field-row">
           <div class="field">
             <label for="feishu-app-id">App ID</label>
@@ -300,7 +347,7 @@
           </div>
         </div>
 
-        <div class="field-row">
+        <div class="field-row feishu-webhook-field">
           <div class="field">
             <label for="feishu-verification-token">Verification Token</label>
             <input id="feishu-verification-token" type="password" placeholder="留空则保持不变">
@@ -313,7 +360,7 @@
           </div>
         </div>
 
-        <div class="field">
+        <div class="field feishu-webhook-field">
           <label for="feishu-webhook-public-base-url">Webhook 对外基础地址</label>
           <input id="feishu-webhook-public-base-url" placeholder="https://your-domain.example.com">
           <div class="field-hint" id="hint-feishu-webhook-public-base-url"></div>
@@ -510,12 +557,31 @@
       return document.querySelector('input[name="image-mode"]:checked')?.value || "wechat_hotlink";
     }
 
+    function getTelegramReceiveMode() {
+      return document.querySelector('input[name="telegram-receive-mode"]:checked')?.value || "webhook";
+    }
+
+    function getFeishuReceiveMode() {
+      return document.querySelector('input[name="feishu-receive-mode"]:checked')?.value || "webhook";
+    }
+
     function syncS3Panel() {
       document.getElementById("s3-panel").classList.toggle("hidden", getImageMode() !== "s3_hotlink");
     }
 
+    function syncReceiveModePanels() {
+      const telegramPolling = getTelegramReceiveMode() === "polling";
+      document.querySelectorAll(".telegram-webhook-field").forEach((el) => el.classList.toggle("hidden", telegramPolling));
+      document.querySelectorAll(".telegram-polling-field").forEach((el) => el.classList.toggle("hidden", !telegramPolling));
+      const feishuLongConnection = getFeishuReceiveMode() === "long_connection";
+      document.querySelectorAll(".feishu-webhook-field").forEach((el) => el.classList.toggle("hidden", feishuLongConnection));
+    }
+
     document.querySelectorAll('input[name="image-mode"]').forEach((el) =>
       el.addEventListener("change", () => { syncS3Panel(); validateAll(); })
+    );
+    document.querySelectorAll('input[name="telegram-receive-mode"], input[name="feishu-receive-mode"]').forEach((el) =>
+      el.addEventListener("change", () => { syncReceiveModePanels(); validateAll(); })
     );
 
     function makeProviderId(prefix = "custom-provider") {
@@ -772,29 +838,32 @@
       "s3-public-url": (v) => getImageMode() !== "s3_hotlink" || /^https?:\/\//i.test(v)
         ? { ok: true, text: "" }
         : { ok: false, text: "必须以 http:// 或 https:// 开头" },
-      "telegram-webhook-public-base-url": (v) => !document.getElementById("telegram-enabled").checked || /^https?:\/\//i.test(v)
+      "telegram-webhook-public-base-url": (v) => !document.getElementById("telegram-enabled").checked || getTelegramReceiveMode() !== "webhook" || /^https?:\/\//i.test(v)
         ? { ok: true, text: "" }
         : { ok: false, text: "必须以 http:// 或 https:// 开头" },
+      "telegram-poll-interval": (v) => getTelegramReceiveMode() !== "polling" || Number(v) >= 1
+        ? { ok: true, text: "" }
+        : { ok: false, text: "请输入不小于 1 的秒数" },
       "telegram-allowed-chat-ids": (v) => !document.getElementById("telegram-enabled").checked || Boolean(v.trim())
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 Telegram 时请填写白名单 Chat ID" },
       "telegram-bot-token": (v) => !document.getElementById("telegram-enabled").checked || v || document.getElementById("telegram-bot-token-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 Telegram 时需要 Bot Token" },
-      "telegram-webhook-secret": (v) => !document.getElementById("telegram-enabled").checked || v || document.getElementById("telegram-webhook-secret-meta").textContent.includes("已配置")
+      "telegram-webhook-secret": (v) => !document.getElementById("telegram-enabled").checked || getTelegramReceiveMode() !== "webhook" || v || document.getElementById("telegram-webhook-secret-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 Telegram 时需要 Webhook Secret" },
       "feishu-app-id": (v) => !document.getElementById("feishu-enabled").checked || Boolean(v.trim())
         ? { ok: true, text: "" }
         : { ok: false, text: "启用飞书时请填写 App ID" },
-      "feishu-webhook-public-base-url": (v) => !document.getElementById("feishu-enabled").checked || /^https?:\/\//i.test(v)
+      "feishu-webhook-public-base-url": (v) => !document.getElementById("feishu-enabled").checked || getFeishuReceiveMode() !== "webhook" || /^https?:\/\//i.test(v)
         ? { ok: true, text: "" }
         : { ok: false, text: "必须以 http:// 或 https:// 开头" },
         "feishu-allowed-open-ids": () => ({ ok: true, text: "" }),
       "feishu-app-secret": (v) => !document.getElementById("feishu-enabled").checked || v || document.getElementById("feishu-app-secret-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用飞书时需要 App Secret" },
-      "feishu-verification-token": (v) => !document.getElementById("feishu-enabled").checked || v || document.getElementById("feishu-verification-token-meta").textContent.includes("已配置")
+      "feishu-verification-token": (v) => !document.getElementById("feishu-enabled").checked || getFeishuReceiveMode() !== "webhook" || v || document.getElementById("feishu-verification-token-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用飞书时需要 Verification Token" },
       "ai-context-template": (v) => !document.getElementById("ai-enabled").checked || Boolean(v.trim())
@@ -829,7 +898,7 @@
     Object.keys(validators).forEach((id) => {
       document.getElementById(id)?.addEventListener("input", validateAll);
     });
-    ["telegram-enabled", "feishu-enabled", "ai-enabled", "ai-enable-content-polish"].forEach((id) => {
+    ["telegram-enabled", "feishu-enabled", "ai-enabled", "ai-enable-content-polish", "deployment-mode"].forEach((id) => {
       document.getElementById(id)?.addEventListener("change", validateAll);
     });
 
@@ -1239,6 +1308,7 @@
       btn.textContent = "保存中…";
 
       const payload = {
+        deployment_mode: document.getElementById("deployment-mode").value,
         fns_base_url: document.getElementById("fns-base-url").value.trim(),
         fns_vault: document.getElementById("fns-vault").value.trim(),
         fns_target_dir: document.getElementById("fns-target-dir").value.trim(),
@@ -1254,11 +1324,14 @@
         image_storage_public_base_url: document.getElementById("s3-public-url").value.trim(),
         telegram_enabled: document.getElementById("telegram-enabled").checked,
         telegram_notify_on_complete: document.getElementById("telegram-notify-on-complete").checked,
+        telegram_receive_mode: getTelegramReceiveMode(),
+        telegram_poll_interval: Number(document.getElementById("telegram-poll-interval").value || "2"),
         telegram_webhook_public_base_url: document.getElementById("telegram-webhook-public-base-url").value.trim(),
         telegram_allowed_chat_ids: document.getElementById("telegram-allowed-chat-ids").value.trim(),
         telegram_image_mode: (document.querySelector('input[name="telegram-image-mode"]:checked') || {}).value || "",
         feishu_enabled: document.getElementById("feishu-enabled").checked,
         feishu_notify_on_complete: document.getElementById("feishu-notify-on-complete").checked,
+        feishu_receive_mode: getFeishuReceiveMode(),
         feishu_app_id: document.getElementById("feishu-app-id").value.trim(),
         feishu_webhook_public_base_url: document.getElementById("feishu-webhook-public-base-url").value.trim(),
         feishu_allowed_open_ids: document.getElementById("feishu-allowed-open-ids").value.trim(),
@@ -1400,6 +1473,7 @@
       try {
         const res = await fetch("/api/admin/settings");
         const data = await res.json();
+        document.getElementById("deployment-mode").value = data.deployment_mode || "vps";
         document.getElementById("fns-base-url").value = data.fns_base_url || "";
         document.getElementById("fns-vault").value = data.fns_vault || "";
         document.getElementById("fns-target-dir").value = data.fns_target_dir || "";
@@ -1425,6 +1499,8 @@
         document.getElementById("telegram-bot-token").value = "";
         document.getElementById("telegram-webhook-secret").value = "";
         document.getElementById("telegram-webhook-public-base-url").value = data.telegram_webhook_public_base_url || "";
+        _setRadioGroup("telegram-receive-mode", data.telegram_receive_mode || "webhook");
+        document.getElementById("telegram-poll-interval").value = data.telegram_poll_interval || 2;
         document.getElementById("telegram-allowed-chat-ids").value = data.telegram_allowed_chat_ids_text || "";
         document.getElementById("telegram-bot-token-meta").textContent = data.telegram_bot_token_configured
           ? `已配置：${data.telegram_bot_token_masked}` : "未配置";
@@ -1440,6 +1516,7 @@
         document.getElementById("feishu-verification-token").value = "";
         document.getElementById("feishu-encrypt-key").value = "";
         document.getElementById("feishu-webhook-public-base-url").value = data.feishu_webhook_public_base_url || "";
+        _setRadioGroup("feishu-receive-mode", data.feishu_receive_mode || "webhook");
         document.getElementById("feishu-allowed-open-ids").value = data.feishu_allowed_open_ids_text || "";
         document.getElementById("feishu-app-secret-meta").textContent = data.feishu_app_secret_configured
           ? `已配置：${data.feishu_app_secret_masked}` : "未配置";
@@ -1448,6 +1525,7 @@
         document.getElementById("feishu-encrypt-key-meta").textContent = data.feishu_encrypt_key_configured
           ? `已配置：${data.feishu_encrypt_key_masked}` : "未配置";
         _setRadioGroup("feishu-image-mode", data.feishu_image_mode || "");
+        syncReceiveModePanels();
         document.getElementById("ai-enabled").checked = Boolean(data.ai_enabled);
         document.getElementById("ai-allow-body-polish").checked = Boolean(data.ai_allow_body_polish);
         document.getElementById("ai-enable-content-polish").checked = Boolean(data.ai_enable_content_polish);
@@ -1475,6 +1553,7 @@
             description: data.telegram_webhook_message || "尚未注册 Webhook",
             items: [
               { label: "Webhook 地址", value: data.telegram_webhook_url || "-" },
+              { label: "接收方式", value: data.telegram_receive_mode || "webhook" },
               { label: "状态", value: data.telegram_webhook_status || "inactive" },
             ],
           }));
@@ -1488,6 +1567,7 @@
             description: data.feishu_webhook_message || "尚未配置飞书 Webhook",
             items: [
               { label: "Webhook 地址", value: data.feishu_webhook_url || "-" },
+              { label: "接收方式", value: data.feishu_receive_mode || "webhook" },
               { label: "状态", value: data.feishu_webhook_status || "inactive" },
             ],
           }));

@@ -9,15 +9,18 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import is_authenticated, router
 from app.auth import SESSION_COOKIE_NAME
+from app.bot_workers import start_bot_receivers, stop_bot_receivers
 from app.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     start_scheduler()
+    start_bot_receivers()
     try:
         yield
     finally:
+        stop_bot_receivers()
         stop_scheduler()
 
 

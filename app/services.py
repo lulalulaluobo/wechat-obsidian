@@ -281,6 +281,11 @@ def _isolated_single_conversion_worker(
     workspace_prefix: str,
     task_id: str | None,
     trigger_channel: str,
+    receive_mode: str,
+    bot_sender_id: str,
+    bot_chat_id: str,
+    bot_message_id: str,
+    deployment_mode: str,
     rerun_of_task_id: str | None,
 ) -> dict[str, Any]:
     return _run_single_conversion(
@@ -294,6 +299,11 @@ def _isolated_single_conversion_worker(
         workspace_prefix=workspace_prefix,
         task_id=task_id,
         trigger_channel=trigger_channel,
+        receive_mode=receive_mode,
+        bot_sender_id=bot_sender_id,
+        bot_chat_id=bot_chat_id,
+        bot_message_id=bot_message_id,
+        deployment_mode=deployment_mode,
         rerun_of_task_id=rerun_of_task_id,
     )
 
@@ -377,6 +387,11 @@ def _run_single_conversion_isolated(
     workspace_prefix: str,
     task_id: str | None,
     trigger_channel: str,
+    receive_mode: str,
+    bot_sender_id: str,
+    bot_chat_id: str,
+    bot_message_id: str,
+    deployment_mode: str,
     rerun_of_task_id: str | None,
     hard_timeout_seconds: int,
 ) -> dict[str, Any]:
@@ -393,6 +408,11 @@ def _run_single_conversion_isolated(
             "workspace_prefix": workspace_prefix,
             "task_id": task_id,
             "trigger_channel": trigger_channel,
+            "receive_mode": receive_mode,
+            "bot_sender_id": bot_sender_id,
+            "bot_chat_id": bot_chat_id,
+            "bot_message_id": bot_message_id,
+            "deployment_mode": deployment_mode,
             "rerun_of_task_id": rerun_of_task_id,
         },
         timeout_seconds=hard_timeout_seconds,
@@ -405,6 +425,11 @@ def _prepare_conversion_tracking(
     trigger_channel: str,
     rerun_of_task_id: str | None,
     task_id: str | None,
+    receive_mode: str,
+    bot_sender_id: str,
+    bot_chat_id: str,
+    bot_message_id: str,
+    deployment_mode: str,
 ) -> tuple[str, str]:
     source_type = detect_source_type(url)
     sync_store = get_sync_store()
@@ -428,6 +453,11 @@ def _prepare_conversion_tracking(
                 error_message="",
                 fetch_status="queued",
                 content_kind="unknown",
+                receive_mode=receive_mode,
+                bot_sender_id=bot_sender_id,
+                bot_chat_id=bot_chat_id,
+                bot_message_id=bot_message_id,
+                deployment_mode=deployment_mode,
             )
             sync_store.update_article_status(
                 url,
@@ -441,6 +471,11 @@ def _prepare_conversion_tracking(
         article_id=str(article.get("id") or ""),
         article_url=url,
         trigger_channel=trigger_channel,
+        receive_mode=receive_mode,
+        bot_sender_id=bot_sender_id,
+        bot_chat_id=bot_chat_id,
+        bot_message_id=bot_message_id,
+        deployment_mode=deployment_mode,
         source_type=source_type,
         status="queued",
         rerun_of_execution_id=str(rerun_of_task_id or "").strip(),
@@ -621,17 +656,29 @@ def execute_single_conversion(
     trigger_channel: str = "web",
     rerun_of_task_id: str | None = None,
     task_id: str | None = None,
+    receive_mode: str | None = None,
+    bot_sender_id: str = "",
+    bot_chat_id: str = "",
+    bot_message_id: str = "",
+    deployment_mode: str | None = None,
     *,
     batch_workspace_root: Path | None = None,
     workspace_prefix: str = "single",
 ) -> dict[str, Any]:
     settings = get_settings()
     normalized_timeout = int(timeout or settings.default_timeout)
+    normalized_receive_mode = str(receive_mode or ("web" if trigger_channel == "web" else "webhook")).strip()
+    normalized_deployment_mode = str(deployment_mode or settings.deployment_mode or "vps").strip() or "vps"
     effective_task_id, source_type = _prepare_conversion_tracking(
         url=url,
         trigger_channel=trigger_channel,
         rerun_of_task_id=rerun_of_task_id,
         task_id=task_id,
+        receive_mode=normalized_receive_mode,
+        bot_sender_id=bot_sender_id,
+        bot_chat_id=bot_chat_id,
+        bot_message_id=bot_message_id,
+        deployment_mode=normalized_deployment_mode,
     )
     try:
         if settings.single_conversion_isolation_enabled:
@@ -646,6 +693,11 @@ def execute_single_conversion(
                 workspace_prefix=workspace_prefix,
                 task_id=effective_task_id,
                 trigger_channel=trigger_channel,
+                receive_mode=normalized_receive_mode,
+                bot_sender_id=bot_sender_id,
+                bot_chat_id=bot_chat_id,
+                bot_message_id=bot_message_id,
+                deployment_mode=normalized_deployment_mode,
                 rerun_of_task_id=rerun_of_task_id,
                 hard_timeout_seconds=settings.single_conversion_hard_timeout_seconds,
             )
@@ -660,6 +712,11 @@ def execute_single_conversion(
             workspace_prefix=workspace_prefix,
             task_id=effective_task_id,
             trigger_channel=trigger_channel,
+            receive_mode=normalized_receive_mode,
+            bot_sender_id=bot_sender_id,
+            bot_chat_id=bot_chat_id,
+            bot_message_id=bot_message_id,
+            deployment_mode=normalized_deployment_mode,
             rerun_of_task_id=rerun_of_task_id,
         )
     except Exception as error:
@@ -684,6 +741,11 @@ def _run_single_conversion(
     workspace_prefix: str = "single",
     task_id: str | None = None,
     trigger_channel: str = "web",
+    receive_mode: str = "web",
+    bot_sender_id: str = "",
+    bot_chat_id: str = "",
+    bot_message_id: str = "",
+    deployment_mode: str = "vps",
     rerun_of_task_id: str | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
@@ -714,12 +776,22 @@ def _run_single_conversion(
             error_message="",
             fetch_status="queued",
             content_kind="unknown",
+            receive_mode=receive_mode,
+            bot_sender_id=bot_sender_id,
+            bot_chat_id=bot_chat_id,
+            bot_message_id=bot_message_id,
+            deployment_mode=deployment_mode,
         )
     else:
         execution = sync_store.create_article_execution(
             article_id=str(article_record.get("id") or ""),
             article_url=url,
             trigger_channel=trigger_channel,
+            receive_mode=receive_mode,
+            bot_sender_id=bot_sender_id,
+            bot_chat_id=bot_chat_id,
+            bot_message_id=bot_message_id,
+            deployment_mode=deployment_mode,
             source_type=source_type,
             status="running",
             ai_enabled=normalized_ai_enabled,
@@ -1862,14 +1934,15 @@ def configure_telegram_webhook(http_session=None) -> dict[str, Any]:
         return state
 
     session = http_session or requests.Session()
-    if not settings.telegram_enabled:
+    if not settings.telegram_enabled or settings.telegram_receive_mode == "polling":
         response = session.post(
             _telegram_api_url(settings.telegram_bot_token, "deleteWebhook"),
             json={"drop_pending_updates": False},
             timeout=max(settings.default_timeout, 15),
         )
         response.raise_for_status()
-        state = {"status": "inactive", "message": "Telegram Webhook 已删除", "webhook_url": ""}
+        message = "Telegram Polling 模式已启用，Webhook 已删除" if settings.telegram_receive_mode == "polling" else "Telegram Webhook 已删除"
+        state = {"status": "inactive", "message": message, "webhook_url": ""}
         update_telegram_webhook_state(state["status"], state["message"])
         return state
 
@@ -1914,16 +1987,38 @@ def send_telegram_message(chat_id: str, text: str, http_session=None) -> dict[st
     return response.json()
 
 
-def submit_telegram_convert_task(url: str, chat_id: str) -> None:
+def submit_telegram_convert_task(
+    url: str,
+    chat_id: str,
+    *,
+    receive_mode: str = "webhook",
+    sender_id: str = "",
+    message_id: str = "",
+) -> None:
     task = get_task_history_store().create_task(
         trigger_channel="telegram",
         source_type=detect_source_type(url),
         source_url=url,
     )
-    _telegram_executor.submit(process_telegram_convert_task, url, chat_id, str(task["task_id"]))
+    _telegram_executor.submit(
+        process_telegram_convert_task,
+        url,
+        chat_id,
+        str(task["task_id"]),
+        receive_mode,
+        sender_id,
+        message_id,
+    )
 
 
-def process_telegram_convert_task(url: str, chat_id: str, task_id: str | None = None) -> None:
+def process_telegram_convert_task(
+    url: str,
+    chat_id: str,
+    task_id: str | None = None,
+    receive_mode: str = "webhook",
+    sender_id: str = "",
+    message_id: str = "",
+) -> None:
     settings = get_settings()
     try:
         payload = execute_single_conversion(
@@ -1933,6 +2028,11 @@ def process_telegram_convert_task(url: str, chat_id: str, task_id: str | None = 
             output_target="fns",
             require_ai_success=True,
             trigger_channel="telegram",
+            receive_mode=receive_mode,
+            bot_sender_id=sender_id,
+            bot_chat_id=chat_id,
+            bot_message_id=message_id,
+            deployment_mode=getattr(settings, "deployment_mode", "vps"),
             rerun_of_task_id=None,
             task_id=task_id,
         )
@@ -1961,7 +2061,7 @@ def process_telegram_convert_task(url: str, chat_id: str, task_id: str | None = 
     title = str(payload["result"].get("title") or "转换完成")
     sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
     resolved_image_mode = str(
-        settings.telegram_image_mode
+        getattr(settings, "telegram_image_mode", None)
         or payload["result"].get("image_mode")
         or payload.get("image_mode")
         or settings.image_mode
@@ -2038,16 +2138,38 @@ def get_feishu_tenant_access_token(http_session=None) -> str:
     return token
 
 
-def submit_feishu_convert_task(url: str, open_id: str) -> None:
+def submit_feishu_convert_task(
+    url: str,
+    open_id: str,
+    *,
+    receive_mode: str = "webhook",
+    sender_id: str = "",
+    message_id: str = "",
+) -> None:
     task = get_task_history_store().create_task(
         trigger_channel="feishu",
         source_type=detect_source_type(url),
         source_url=url,
     )
-    _feishu_executor.submit(process_feishu_convert_task, url, open_id, str(task["task_id"]))
+    _feishu_executor.submit(
+        process_feishu_convert_task,
+        url,
+        open_id,
+        str(task["task_id"]),
+        receive_mode,
+        sender_id,
+        message_id,
+    )
 
 
-def process_feishu_convert_task(url: str, open_id: str, task_id: str | None = None) -> None:
+def process_feishu_convert_task(
+    url: str,
+    open_id: str,
+    task_id: str | None = None,
+    receive_mode: str = "webhook",
+    sender_id: str = "",
+    message_id: str = "",
+) -> None:
     settings = get_settings()
     try:
         payload = execute_single_conversion(
@@ -2057,6 +2179,11 @@ def process_feishu_convert_task(url: str, open_id: str, task_id: str | None = No
             output_target="fns",
             require_ai_success=True,
             trigger_channel="feishu",
+            receive_mode=receive_mode,
+            bot_sender_id=sender_id or open_id,
+            bot_chat_id=open_id,
+            bot_message_id=message_id,
+            deployment_mode=getattr(settings, "deployment_mode", "vps"),
             rerun_of_task_id=None,
             task_id=task_id,
         )
@@ -2085,7 +2212,7 @@ def process_feishu_convert_task(url: str, open_id: str, task_id: str | None = No
     title = str(payload["result"].get("title") or "转换完成")
     sync_path = str(payload["sync"].get("path") or payload["sync"].get("markdown_file") or "-")
     resolved_image_mode = str(
-        settings.feishu_image_mode
+        getattr(settings, "feishu_image_mode", None)
         or payload["result"].get("image_mode")
         or payload.get("image_mode")
         or settings.image_mode
@@ -2118,12 +2245,173 @@ def extract_single_wechat_url(text: str) -> tuple[str | None, int]:
     return unique_links[0], len(unique_links)
 
 
+_bot_event_ttl_seconds = 10 * 60
+_bot_event_cache: dict[str, float] = {}
+_bot_event_lock = threading.Lock()
+
+
+def _remember_service_bot_event(key: str | None, platform: str) -> bool:
+    if not key:
+        return False
+    now = time.monotonic()
+    with _bot_event_lock:
+        expired = [event_key for event_key, expires_at in _bot_event_cache.items() if expires_at <= now]
+        for event_key in expired:
+            _bot_event_cache.pop(event_key, None)
+        if key in _bot_event_cache:
+            print(f"[bot] duplicate message ignored platform={platform} key={key}")
+            return True
+        _bot_event_cache[key] = now + _bot_event_ttl_seconds
+    return False
+
+
+def build_telegram_bot_message(payload: dict[str, Any], receive_mode: str) -> dict[str, Any] | None:
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else None
+    if not isinstance(message, dict):
+        return None
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    sender = message.get("from") if isinstance(message.get("from"), dict) else {}
+    chat_id = str(chat.get("id") or "").strip()
+    sender_id = str(sender.get("id") or chat_id).strip()
+    message_id = str(message.get("message_id") or "").strip()
+    update_id = str(payload.get("update_id") or "").strip()
+    text = str(message.get("text") or "").strip()
+    urls = parse_links(urls_text=text)
+    return {
+        "trigger_channel": "telegram",
+        "receive_mode": receive_mode,
+        "sender_id": sender_id,
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "event_key": f"telegram:{chat_id}:{message_id}" if message_id else (f"telegram:update:{update_id}" if update_id else ""),
+        "raw_text": text,
+        "urls": urls,
+        "created_at": _utc_now(),
+    }
+
+
+def build_feishu_bot_message(payload: dict[str, Any], receive_mode: str) -> dict[str, Any] | None:
+    text, open_id, chat_type = extract_feishu_message_text(payload)
+    if not open_id:
+        return None
+    header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    urls = parse_links(urls_text=text)
+    event_id = str(header.get("event_id") or "").strip()
+    message_id = str(message.get("message_id") or "").strip()
+    return {
+        "trigger_channel": "feishu",
+        "receive_mode": receive_mode,
+        "sender_id": open_id,
+        "chat_id": open_id,
+        "chat_type": chat_type or "",
+        "message_id": message_id,
+        "event_key": f"feishu:{event_id}" if event_id else (f"feishu:{open_id}:{message_id}" if message_id else ""),
+        "raw_text": text,
+        "urls": urls,
+        "created_at": _utc_now(),
+    }
+
+
+def handle_bot_message(
+    message: dict[str, Any],
+    *,
+    telegram_sender=None,
+    feishu_sender=None,
+    telegram_submitter=None,
+    feishu_submitter=None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    telegram_sender = telegram_sender or send_telegram_message
+    feishu_sender = feishu_sender or send_feishu_message
+    telegram_submitter = telegram_submitter or submit_telegram_convert_task
+    feishu_submitter = feishu_submitter or submit_feishu_convert_task
+    trigger_channel = str(message.get("trigger_channel") or "").strip()
+    receive_mode = str(message.get("receive_mode") or "webhook").strip() or "webhook"
+    sender_id = str(message.get("sender_id") or "").strip()
+    chat_id = str(message.get("chat_id") or sender_id).strip()
+    message_id = str(message.get("message_id") or "").strip()
+    raw_text = str(message.get("raw_text") or "").strip()
+    event_key = str(message.get("event_key") or "").strip()
+
+    if trigger_channel == "telegram":
+        if not settings.telegram_enabled:
+            return {"status": "ignored", "reason": "telegram_disabled"}
+        if not chat_id or chat_id not in settings.telegram_allowed_chat_ids:
+            return {"status": "ignored", "reason": "chat_not_allowed"}
+        if _remember_service_bot_event(event_key, "telegram"):
+            return {"status": "ignored", "reason": "duplicate_message"}
+        url, url_count = extract_single_wechat_url(raw_text)
+        if url_count == 0 or not url:
+            telegram_sender(chat_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
+            return {"status": "replied", "reason": "no_link"}
+        if url_count > 1:
+            telegram_sender(chat_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
+            return {"status": "replied", "reason": "multiple_links"}
+        if not settings.fns_enabled:
+            telegram_sender(chat_id, "当前 FNS 尚未配置完成，无法执行 Telegram 单篇转换。")
+            return {"status": "replied", "reason": "fns_not_configured"}
+        telegram_sender(chat_id, "已接收，开始转换。")
+        if receive_mode == "webhook":
+            telegram_submitter(url, chat_id)
+        else:
+            telegram_submitter(url, chat_id, receive_mode=receive_mode, sender_id=sender_id, message_id=message_id)
+        return {"status": "accepted"}
+
+    if trigger_channel == "feishu":
+        if not settings.feishu_enabled:
+            return {"status": "ignored", "reason": "feishu_disabled"}
+        if str(message.get("chat_type") or "p2p") != "p2p":
+            return {"status": "ignored", "reason": "chat_type_not_supported"}
+        if settings.feishu_allowed_open_ids and sender_id not in settings.feishu_allowed_open_ids:
+            return {"status": "ignored", "reason": "open_id_not_allowed"}
+        if _remember_service_bot_event(event_key, "feishu"):
+            return {"status": "ignored", "reason": "duplicate_message"}
+        url, url_count = extract_single_wechat_url(raw_text)
+        if url_count == 0 or not url:
+            feishu_sender(sender_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
+            return {"status": "replied", "reason": "no_link"}
+        if url_count > 1:
+            feishu_sender(sender_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
+            return {"status": "replied", "reason": "multiple_links"}
+        if not settings.fns_enabled:
+            feishu_sender(sender_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
+            return {"status": "replied", "reason": "fns_not_configured"}
+        feishu_sender(sender_id, "已接收，开始转换。")
+        if receive_mode == "webhook":
+            feishu_submitter(url, sender_id)
+        else:
+            feishu_submitter(url, sender_id, receive_mode=receive_mode, sender_id=sender_id, message_id=message_id)
+        return {"status": "accepted"}
+
+    return {"status": "ignored", "reason": "unsupported_channel"}
+
+
+def process_telegram_polling_update(payload: dict[str, Any]) -> dict[str, Any]:
+    message = build_telegram_bot_message(payload, "polling")
+    if message is None:
+        return {"status": "ignored", "reason": "no_message"}
+    return handle_bot_message(message)
+
+
+def process_feishu_long_connection_event(payload: dict[str, Any]) -> dict[str, Any]:
+    message = build_feishu_bot_message(payload, "long_connection")
+    if message is None:
+        return {"status": "ignored", "reason": "missing_open_id"}
+    return handle_bot_message(message)
+
+
 
 
 def configure_feishu_webhook_state() -> dict[str, Any]:
     settings = get_settings()
     if not settings.feishu_enabled:
         state = {"status": "inactive", "message": "飞书 Bot 未启用", "webhook_url": settings.feishu_webhook_url or ""}
+        update_feishu_webhook_state(state["status"], state["message"], webhook_url=state["webhook_url"])
+        return state
+    if settings.feishu_receive_mode == "long_connection":
+        state = {"status": "ready", "message": "飞书长连接模式已启用，无需配置公网 Webhook", "webhook_url": ""}
         update_feishu_webhook_state(state["status"], state["message"], webhook_url=state["webhook_url"])
         return state
     if not settings.feishu_enabled_and_configured or not settings.feishu_webhook_url:

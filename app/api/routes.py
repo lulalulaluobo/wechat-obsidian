@@ -29,7 +29,9 @@ from app.config import (
 )
 from app.services import (
     authenticate_db_user,
+    build_feishu_bot_message,
     build_sync_config_payload,
+    build_telegram_bot_message,
     build_config_payload,
     build_output_target,
     check_fns_status,
@@ -49,6 +51,7 @@ from app.services import (
     get_scheduler_settings,
     get_wechat_mp_credentials,
     get_wechat_mp_qr_login_status,
+    handle_bot_message,
     ensure_runtime_environment,
     get_ingest_job,
     get_internal_workdir_root,
@@ -779,37 +782,22 @@ async def telegram_webhook(
     settings = get_settings()
     if not settings.telegram_enabled:
         return {"status": "ignored", "reason": "telegram_disabled"}
+    if settings.telegram_receive_mode != "webhook":
+        return {"status": "ignored", "reason": "telegram_webhook_disabled"}
     if not settings.telegram_webhook_secret or telegram_secret != settings.telegram_webhook_secret:
         raise HTTPException(status_code=403, detail="Telegram webhook secret 无效")
 
     payload = await request.json()
-    message = payload.get("message") if isinstance(payload, dict) else None
-    if not isinstance(message, dict):
+    if not isinstance(payload, dict):
         return {"status": "ignored", "reason": "no_message"}
-
-    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
-    chat_id = str(chat.get("id") or "").strip()
-    if not chat_id or chat_id not in settings.telegram_allowed_chat_ids:
-        return {"status": "ignored", "reason": "chat_not_allowed"}
-    event_key = _build_telegram_event_key(payload, chat_id)
-    if _remember_bot_event(event_key, "telegram"):
-        return {"status": "ignored", "reason": "duplicate_message"}
-
-    text = str(message.get("text") or "").strip()
-    url, url_count = extract_single_wechat_url(text)
-    if url_count == 0 or not url:
-        send_telegram_message(chat_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
-        return {"status": "replied", "reason": "no_link"}
-    if url_count > 1:
-        send_telegram_message(chat_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
-        return {"status": "replied", "reason": "multiple_links"}
-    if not settings.fns_enabled:
-        send_telegram_message(chat_id, "当前 FNS 尚未配置完成，无法执行 Telegram 单篇转换。")
-        return {"status": "replied", "reason": "fns_not_configured"}
-
-    send_telegram_message(chat_id, "已接收，开始转换。")
-    submit_telegram_convert_task(url, chat_id)
-    return {"status": "accepted"}
+    bot_message = build_telegram_bot_message(payload, "webhook")
+    if bot_message is None:
+        return {"status": "ignored", "reason": "no_message"}
+    return handle_bot_message(
+        bot_message,
+        telegram_sender=send_telegram_message,
+        telegram_submitter=submit_telegram_convert_task,
+    )
 
 
 @router.post("/api/integrations/feishu/webhook")
@@ -833,38 +821,27 @@ async def feishu_webhook(
 
     if not settings.feishu_enabled:
         return {"status": "ignored", "reason": "feishu_disabled"}
+    if settings.feishu_receive_mode != "webhook":
+        return {"status": "ignored", "reason": "feishu_webhook_disabled"}
 
-    text, open_id, chat_type = extract_feishu_message_text(payload)
-    if not open_id:
+    bot_message = build_feishu_bot_message(payload, "webhook")
+    if bot_message is None:
         return {"status": "ignored", "reason": "missing_open_id"}
+    text = str(bot_message.get("raw_text") or "")
+    open_id = str(bot_message.get("sender_id") or "")
+    chat_type = str(bot_message.get("chat_type") or "")
     print(f"[feishu] received message open_id={open_id} chat_type={chat_type}")
-    if chat_type != "p2p":
-        return {"status": "ignored", "reason": "chat_type_not_supported"}
-    if settings.feishu_allowed_open_ids and open_id not in settings.feishu_allowed_open_ids:
-        return {"status": "ignored", "reason": "open_id_not_allowed"}
-    event_key = _build_feishu_event_key(payload, open_id)
-    if _remember_bot_event(event_key, "feishu"):
-        return {"status": "ignored", "reason": "duplicate_message"}
-
     url, url_count = extract_single_wechat_url(text)
     print(
         "[feishu] message parsed "
         f"open_id={open_id} url_count={url_count} "
-        f"url_found={bool(url)} event_key={event_key or '-'}"
+        f"url_found={bool(url)} event_key={bot_message.get('event_key') or '-'}"
     )
-    if url_count == 0 or not url:
-        _safe_send_feishu_message(open_id, "未识别到可用链接，请直接发送一条公众号或普通网页链接。")
-        return {"status": "replied", "reason": "no_link"}
-    if url_count > 1:
-        _safe_send_feishu_message(open_id, "一次只支持一条链接，请只发送一条公众号或普通网页链接。")
-        return {"status": "replied", "reason": "multiple_links"}
-    if not settings.fns_enabled:
-        _safe_send_feishu_message(open_id, "当前 FNS 尚未配置完成，无法执行飞书单篇转换。")
-        return {"status": "replied", "reason": "fns_not_configured"}
-
-    _safe_send_feishu_message(open_id, "已接收，开始转换。")
-    submit_feishu_convert_task(url, open_id)
-    return {"status": "accepted"}
+    return handle_bot_message(
+        bot_message,
+        feishu_sender=_safe_send_feishu_message,
+        feishu_submitter=submit_feishu_convert_task,
+    )
 
 
 def _parse_bool(value: Any) -> bool:

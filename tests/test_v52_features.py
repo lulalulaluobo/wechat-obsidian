@@ -219,6 +219,36 @@ class V52FeatureTests(unittest.TestCase):
         self.assertIn("启用全文正文润色", text)
         self.assertNotIn("允许生成额外正文补充块", text)
 
+    def test_article_execution_records_bot_receive_metadata(self):
+        store = get_sync_store()
+        article, _ = store.upsert_article(
+            {
+                "article_url": "https://mp.weixin.qq.com/s/bot-meta",
+                "source_type": "wechat",
+                "fetch_status": "queued",
+                "process_status": "queued",
+            }
+        )
+
+        execution = store.create_article_execution(
+            article_id=str(article["id"]),
+            article_url=str(article["article_url"]),
+            trigger_channel="telegram",
+            source_type="wechat",
+            receive_mode="polling",
+            bot_sender_id="123456",
+            bot_chat_id="123456",
+            bot_message_id="778",
+            deployment_mode="nas",
+        )
+
+        fetched = store.get_article_execution(str(execution["id"]))
+        self.assertEqual(fetched["receive_mode"], "polling")
+        self.assertEqual(fetched["bot_sender_id"], "123456")
+        self.assertEqual(fetched["bot_chat_id"], "123456")
+        self.assertEqual(fetched["bot_message_id"], "778")
+        self.assertEqual(fetched["deployment_mode"], "nas")
+
 
 if __name__ == "__main__":
     unittest.main()

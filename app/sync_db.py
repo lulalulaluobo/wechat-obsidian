@@ -176,6 +176,11 @@ class SyncStore:
                         article_id TEXT NOT NULL,
                         article_url TEXT NOT NULL,
                         trigger_channel TEXT NOT NULL DEFAULT 'web',
+                        receive_mode TEXT NOT NULL DEFAULT 'web',
+                        bot_sender_id TEXT NOT NULL DEFAULT '',
+                        bot_chat_id TEXT NOT NULL DEFAULT '',
+                        bot_message_id TEXT NOT NULL DEFAULT '',
+                        deployment_mode TEXT NOT NULL DEFAULT 'vps',
                         source_type TEXT NOT NULL DEFAULT 'wechat',
                         status TEXT NOT NULL DEFAULT 'queued',
                         ai_enabled INTEGER NOT NULL DEFAULT 0,
@@ -273,6 +278,11 @@ class SyncStore:
                     """
                 )
                 _ensure_column(connection, "articles", "last_sync_run_id", "TEXT NOT NULL DEFAULT ''")
+                _ensure_column(connection, "article_executions", "receive_mode", "TEXT NOT NULL DEFAULT 'web'")
+                _ensure_column(connection, "article_executions", "bot_sender_id", "TEXT NOT NULL DEFAULT ''")
+                _ensure_column(connection, "article_executions", "bot_chat_id", "TEXT NOT NULL DEFAULT ''")
+                _ensure_column(connection, "article_executions", "bot_message_id", "TEXT NOT NULL DEFAULT ''")
+                _ensure_column(connection, "article_executions", "deployment_mode", "TEXT NOT NULL DEFAULT 'vps'")
             self._initialized = True
 
     def build_cache_key(self, article_url: str) -> str:
@@ -780,6 +790,11 @@ class SyncStore:
         trigger_channel: str,
         source_type: str,
         status: str = "queued",
+        receive_mode: str = "web",
+        bot_sender_id: str = "",
+        bot_chat_id: str = "",
+        bot_message_id: str = "",
+        deployment_mode: str = "vps",
         ai_enabled: bool = False,
         output_target: str = "fns",
         sync_run_id: str = "",
@@ -798,6 +813,11 @@ class SyncStore:
             "article_id": str(article_id or "").strip(),
             "article_url": str(article_url or "").strip(),
             "trigger_channel": str(trigger_channel or "web").strip() or "web",
+            "receive_mode": str(receive_mode or "web").strip() or "web",
+            "bot_sender_id": str(bot_sender_id or "").strip(),
+            "bot_chat_id": str(bot_chat_id or "").strip(),
+            "bot_message_id": str(bot_message_id or "").strip(),
+            "deployment_mode": str(deployment_mode or "vps").strip() or "vps",
             "source_type": str(source_type or "wechat").strip() or "wechat",
             "status": str(status or "queued").strip() or "queued",
             "ai_enabled": _normalize_bool(ai_enabled),
@@ -819,11 +839,12 @@ class SyncStore:
             connection.execute(
                 """
                 INSERT INTO article_executions (
-                    id, article_id, article_url, trigger_channel, source_type, status, ai_enabled,
+                    id, article_id, article_url, trigger_channel, receive_mode, bot_sender_id,
+                    bot_chat_id, bot_message_id, deployment_mode, source_type, status, ai_enabled,
                     output_target, sync_run_id, ingest_job_id, rerun_of_execution_id, fetch_status,
                     content_kind, note_title, sync_path, error_message, created_at, updated_at,
                     started_at, finished_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 tuple(payload.values()),
             )
@@ -843,6 +864,11 @@ class SyncStore:
             updated["finished_at"] = _utc_now()
         columns = [
             "status",
+            "receive_mode",
+            "bot_sender_id",
+            "bot_chat_id",
+            "bot_message_id",
+            "deployment_mode",
             "ai_enabled",
             "output_target",
             "sync_run_id",

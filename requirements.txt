@@ -7,3 +7,4 @@ httpx>=0.28,<1.0
 cryptography>=46.0.5,<47
 beautifulsoup4>=4.14,<5.0
 readability-lxml>=0.8.4,<1.0
+lark-oapi>=1.4,<2.0
