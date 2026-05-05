@@ -52,6 +52,7 @@ from app.services import (
     extract_feishu_message_text,
     extract_single_wechat_url,
     get_db_user,
+    get_detected_feishu_open_ids,
     get_scheduler_settings,
     get_sync_store,
     get_wechat_mp_credentials,
@@ -1028,6 +1029,7 @@ async def feishu_webhook(
     text = str(bot_message.get("raw_text") or "")
     open_id = str(bot_message.get("sender_id") or "")
     chat_type = str(bot_message.get("chat_type") or "")
+    _record_feishu_open_id(open_id)
     print(f"[feishu] received message open_id={open_id} chat_type={chat_type}")
     url, url_count = extract_single_wechat_url(text)
     print(
@@ -1040,6 +1042,15 @@ async def feishu_webhook(
         feishu_sender=_safe_send_feishu_message,
         feishu_submitter=submit_feishu_convert_task,
     )
+
+
+@router.get("/api/integrations/feishu/detected-open-ids")
+async def feishu_detected_open_ids(
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    _require_access(session_cookie)
+    ids = get_detected_feishu_open_ids()
+    return {"open_ids": ids}
 
 
 def _parse_bool(value: Any) -> bool:

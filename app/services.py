@@ -41,10 +41,24 @@ _task_history_store_cache: dict[str, TaskHistoryStore] = {}
 _sync_store_lock = threading.Lock()
 _sync_store_cache: dict[str, SyncStore] = {}
 _mp_context = mp.get_context("spawn")
+_detected_feishu_open_ids: dict[str, float] = {}
+_detected_feishu_open_ids_lock = threading.Lock()
 
 
 def run_pipeline(*args: Any, **kwargs: Any) -> dict[str, Any]:
     return run_article_pipeline(*args, **kwargs)
+
+
+def _record_feishu_open_id(open_id: str) -> None:
+    if not open_id:
+        return
+    with _detected_feishu_open_ids_lock:
+        _detected_feishu_open_ids[open_id] = time.time()
+
+
+def get_detected_feishu_open_ids() -> list[str]:
+    with _detected_feishu_open_ids_lock:
+        return sorted(_detected_feishu_open_ids.keys())
 
 
 def get_internal_workdir_root() -> Path:
@@ -2405,9 +2419,11 @@ def process_feishu_long_connection_event(payload: dict[str, Any]) -> dict[str, A
     message = build_feishu_bot_message(payload, "long_connection")
     if message is None:
         return {"status": "ignored", "reason": "missing_open_id"}
+    open_id = message.get("sender_id") or ""
+    _record_feishu_open_id(open_id)
     print(
         "[feishu] long_connection received message "
-        f"open_id={message.get('sender_id') or ''} chat_type={message.get('chat_type') or ''}"
+        f"open_id={open_id} chat_type={message.get('chat_type') or ''}"
     )
     return handle_bot_message(message)
 

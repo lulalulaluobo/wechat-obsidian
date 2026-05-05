@@ -292,7 +292,7 @@
     <div class="tab-panel" data-tab-panel="settings" data-tab-id="feishu">
       <div class="card">
         <h2 class="card-title">飞书 Bot</h2>
-        <p class="card-desc">通过飞书自建应用 Bot 的事件订阅触发单篇转换。第一版仅支持私聊；open_id 白名单可留空，联调完成后再补。</p>
+        <p class="card-desc">通过飞书自建应用 Bot 的事件订阅触发单篇转换。第一版仅支持私聊；白名单留空表示不限制，任何私聊 Bot 的用户都可使用。</p>
 
         <label class="check-row" style="margin-bottom:12px;">
           <input id="feishu-enabled" type="checkbox">
@@ -354,8 +354,11 @@
 
         <div class="field">
           <label for="feishu-allowed-open-ids">白名单 open_id</label>
-          <textarea id="feishu-allowed-open-ids" placeholder="每行一个 open_id，或逗号分隔" style="min-height:90px;"></textarea>
-          <div class="field-hint" id="hint-feishu-allowed-open-ids">App ID / App Secret 不能自动推导用户 open_id。可先留空，私聊 Bot 发送一条链接后，从服务日志里的 open_id 填回白名单。</div>
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <textarea id="feishu-allowed-open-ids" placeholder="每行一个 open_id，或逗号分隔。留空 = 不限制任何人。" style="min-height:90px;flex:1;"></textarea>
+            <button type="button" id="btn-detect-feishu-open-ids" class="btn" style="white-space:nowrap;">自动检测</button>
+          </div>
+          <div class="field-hint" id="hint-feishu-allowed-open-ids">留空表示不限制，任何私聊 Bot 的用户都可使用。也可点击「自动检测」，从最近消息中获取 open_id 并填入。</div>
         </div>
 
         <div class="action-row">
@@ -1012,6 +1015,33 @@
       document.getElementById("feishu-encrypt-key-meta").textContent = "保存时将清空 Encrypt Key";
       validateAll();
       AdminUI.toast("已标记清空飞书 Encrypt Key", "warn");
+    });
+
+    document.getElementById("btn-detect-feishu-open-ids").addEventListener("click", async () => {
+      const btn = document.getElementById("btn-detect-feishu-open-ids");
+      btn.disabled = true;
+      btn.textContent = "检测中…";
+      try {
+        const res = await fetch("/api/integrations/feishu/detected-open-ids", { credentials: "include" });
+        if (!res.ok) throw new Error("请求失败");
+        const data = await res.json();
+        const ids = data.open_ids || [];
+        if (ids.length === 0) {
+          AdminUI.toast("暂未检测到 open_id。请先私聊飞书 Bot 发送一条消息后再试。", "warn");
+          return;
+        }
+        const textarea = document.getElementById("feishu-allowed-open-ids");
+        const existing = textarea.value.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+        const merged = [...new Set([...existing, ...ids])];
+        textarea.value = merged.join("\n");
+        validateAll();
+        AdminUI.toast(`已检测到 ${ids.length} 个 open_id 并填入`, "success");
+      } catch (e) {
+        AdminUI.toast("检测失败：" + (e.message || "未知错误"), "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "自动检测";
+      }
     });
 
     document.getElementById("ai-provider-list").addEventListener("input", (event) => {
