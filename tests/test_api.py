@@ -928,6 +928,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Bot Token", text)
         self.assertIn("Webhook 对外基础地址", text)
         self.assertIn("白名单 Chat ID", text)
+        self.assertIn("App ID / App Secret 不能自动推导用户 open_id", text)
         self.assertIn("AI 润色", text)
         self.assertIn("Provider 管理", text)
         self.assertIn("当前使用模型", text)
@@ -1536,6 +1537,46 @@ class ApiTests(unittest.TestCase):
             sender_id="ou_123",
             message_id="om_2001",
         )
+
+    def test_feishu_long_connection_event_logs_open_id_to_stdout(self):
+        self._login()
+        with patch("app.api.routes.configure_telegram_webhook", return_value={"status": "inactive", "message": "noop", "webhook_url": ""}):
+            self.client.put(
+                "/api/admin/settings",
+                json={
+                    "deployment_mode": "nas",
+                    "feishu_enabled": True,
+                    "feishu_app_id": "cli_xxx",
+                    "feishu_app_secret": "secret",
+                    "feishu_receive_mode": "long_connection",
+                    "feishu_allowed_open_ids": "",
+                    "fns_base_url": "https://fns.example.com",
+                    "fns_token": "fns-token",
+                    "fns_vault": "MainVault",
+                },
+            )
+
+        with patch("builtins.print") as mocked_print:
+            with patch("app.services.send_feishu_message"):
+                with patch("app.services.submit_feishu_convert_task"):
+                    result = process_feishu_long_connection_event(
+                        {
+                            "schema": "2.0",
+                            "header": {"event_type": "im.message.receive_v1", "event_id": "evt_2002"},
+                            "event": {
+                                "message": {
+                                    "message_id": "om_2002",
+                                    "message_type": "text",
+                                    "chat_type": "p2p",
+                                    "content": "{\"text\":\"https://mp.weixin.qq.com/s/example\"}",
+                                },
+                                "sender": {"sender_id": {"open_id": "ou_long_connection"}},
+                            },
+                        }
+                    )
+
+        self.assertEqual(result["status"], "accepted")
+        mocked_print.assert_any_call("[feishu] long_connection received message open_id=ou_long_connection chat_type=p2p")
 
     def test_feishu_webhook_rejects_zhihu_link(self):
         self._login()

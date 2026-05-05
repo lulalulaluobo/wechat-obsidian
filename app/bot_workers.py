@@ -125,7 +125,7 @@ def _feishu_long_connection_loop() -> None:
 def _run_feishu_ws_client() -> None:
     try:
         import lark_oapi as lark
-        from lark_oapi.event.callback.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
+        from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
     except ImportError as error:
         raise RuntimeError("飞书长连接需要安装 lark-oapi 依赖") from error
 

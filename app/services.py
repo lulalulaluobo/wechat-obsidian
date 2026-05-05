@@ -2405,6 +2405,10 @@ def process_feishu_long_connection_event(payload: dict[str, Any]) -> dict[str, A
     message = build_feishu_bot_message(payload, "long_connection")
     if message is None:
         return {"status": "ignored", "reason": "missing_open_id"}
+    print(
+        "[feishu] long_connection received message "
+        f"open_id={message.get('sender_id') or ''} chat_type={message.get('chat_type') or ''}"
+    )
     return handle_bot_message(message)
 
 
