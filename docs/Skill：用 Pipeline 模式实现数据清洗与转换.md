@@ -17,7 +17,7 @@ input:
 output:
   - 经过完整管线处理后的最终结果
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -338,11 +338,11 @@ assert Path(result['markdown_file']).exists(), "Markdown 文件应该存在"
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/core/pipeline.py`（WeChatArticlePipeline 类、run_pipeline 函数、run_article_pipeline 函数）
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/core/pipeline.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/core/pipeline.py`

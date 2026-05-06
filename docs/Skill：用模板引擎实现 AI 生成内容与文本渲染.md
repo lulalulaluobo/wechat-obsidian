@@ -16,7 +16,7 @@ input:
 output:
   - 渲染后的最终文本（占位符被替换为实际值）
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -302,11 +302,11 @@ print("所有测试通过")
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/ai_polish.py`（render_template 函数、apply_ai_polish_to_markdown 函数）
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/ai_polish.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/ai_polish.py`

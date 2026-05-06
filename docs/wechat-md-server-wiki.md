@@ -943,74 +943,38 @@ _ingest_executor → _run_ingest_job()
 
 ## 8. 值得复用的模块 / 机制
 
-| 模块 / 机制 | 原项目中的作用 | 复用价值 | 可迁移方向 |
+| 模块 / 机制 | 原项目中的作用 | 复用价值 | 已沉淀 Brick |
 | --- | --- | --- | --- |
-| HTML→Markdown 清洗管线 | 把微信 HTML 转为干净 Markdown | 高 | 任何网页内容转笔记的项目 |
-| 多 Provider AI 适配器 | 统一调用 6 种 AI 服务 | 高 | 任何需要调用 AI 的 Python 项目 |
-| 模板驱动的 AI 润色 | 用模板变量做内容增强 | 高 | AI 笔记增强、内容自动化 |
-| 分层配置 + 加密存储 | 安全管理敏感配置 | 中 | 任何需要存储 token 的项目 |
-| 进程隔离执行 | 防止任务卡死影响主服务 | 中 | 需要执行不可信任务的项目 |
-| Bot 多平台接入 | Telegram + 飞书双平台 | 中 | 需要 Bot 接入的项目 |
-| S3 签名自实现 | 轻量上传图片到对象存储 | 中 | 不想引入 AWS SDK 的项目 |
-| 30 秒轮询调度器 | 简单定时任务 | 低 | 个人项目的轻量定时需求 |
+| HTML→Markdown 清洗管线 | 把微信 HTML 转为干净 Markdown | 高 | [[Skill：用 Pipeline 模式实现数据清洗与转换]] |
+| 多 Provider AI 适配器 | 统一调用 6 种 AI 服务 | 高 | [[Skill：给 Python 项目添加新的 AI Provider]] |
+| 模板驱动的 AI 润色 | 用模板变量做内容增强 | 高 | [[Skill：用模板引擎实现 AI 生成内容与文本渲染]] |
+| 分层配置 + 加密存储 | 安全管理敏感配置 | 中 | [[Skill：给 Python 项目实现分层配置系统]] |
+| 进程隔离执行 | 防止任务卡死影响主服务 | 中 | [[Skill：用进程隔离执行耗时或高风险任务]] |
+| Bot 多平台接入 | Telegram + 飞书双平台 | 中 | [[Skill：在 FastAPI 项目中添加 Bot 接入]] |
+| 认证与加密 | 密码哈希 + 对称加密 + 限速 | 中 | [[Concept：Python 后端安全基础 — 密码哈希、对称加密与会话限速]] |
+| 30 秒轮询调度器 | 简单定时任务 | 低 | [[Concept：Python 后台定时调度的实现模式]] |
 
 ---
 
-## 9. skill-brick 候选清单
+## 9. 已生成的 Brick 清单
 
-### 候选 skill-brick 1：如何用 pipeline.py 独立转换一篇微信文章
+### Skill-brick
 
-- 来源模块：core/pipeline.py
-- 原项目中的执行流程：pipeline.py 自带 CLI 入口，可以独立运行
-- 适合执行者：开发者 / AI Agent
-- 核心价值：学会如何把微信文章 HTML 转为干净 Markdown
-- 可迁移方向：任何需要网页内容转笔记的场景
-- 是否建议调用 skill-brick-writer：是
+| # | Brick | 来源模块 | 核心学到的模式 |
+| --- | --- | --- | --- |
+| 1 | [[Skill：用 Pipeline 模式实现数据清洗与转换]] | core/pipeline.py | 把复杂任务拆成独立步骤，数据在步骤间流动 |
+| 2 | [[Skill：给 Python 项目添加新的 AI Provider]] | ai_adapters.py | 适配器模式统一多 Provider 接口 |
+| 3 | [[Skill：用模板引擎实现 AI 生成内容与文本渲染]] | ai_polish.py | `{{variable}}` 占位符 + JSON 解析 + 数据与格式分离 |
+| 4 | [[Skill：在 FastAPI 项目中添加 Bot 接入]] | bot_workers.py, services.py | 五层架构：接收→解析→去重→异步任务→回执 |
+| 5 | [[Skill：给 Python 项目实现分层配置系统]] | config.py | 环境变量→配置文件→默认值 + Fernet 加密 |
+| 6 | [[Skill：用进程隔离执行耗时或高风险任务]] | services.py | multiprocessing.spawn + Queue + 两级超时清理 |
 
-### 候选 skill-brick 2：如何给项目添加新的 AI Provider
+### Concept-brick
 
-- 来源模块：ai_adapters.py
-- 原项目中的执行流程：在 ai_adapters.py 中添加新的 `_request_xxx()` 函数
-- 适合执行者：开发者
-- 核心价值：学会适配器模式在 AI 服务对接中的实际应用
-- 可迁移方向：任何需要对接新 AI 服务的项目
-- 是否建议调用 skill-brick-writer：是
-
-### 候选 skill-brick 3：如何用模板变量系统做 AI 内容增强
-
-- 来源模块：ai_polish.py
-- 原项目中的执行流程：定义模板 → AI 生成变量 → 渲染模板 → 输出
-- 适合执行者：开发者 / AI Agent
-- 核心价值：学会"AI 生成变量 + 模板渲染"的内容增强模式
-- 可迁移方向：任何需要用 AI 增强文档、笔记或内容的场景
-- 是否建议调用 skill-brick-writer：是
-
-### 候选 skill-brick 4：如何在 FastAPI 项目中添加 Bot 接入
-
-- 来源模块：bot_workers.py + services.py 中 Bot 相关逻辑
-- 原项目中的执行流程：后台线程 + Webhook/轮询 + 消息解析 + 异步任务 + 回执
-- 适合执行者：开发者
-- 核心价值：完整的 Bot 接入流程（Telegram + 飞书）
-- 可迁移方向：需要 Bot 接入的项目
-- 是否建议调用 skill-brick-writer：是
-
-### 候选 skill-brick 5：如何设计和使用分层配置系统
-
-- 来源模块：config.py
-- 原项目中的执行流程：环境变量 → JSON 文件 → 默认值，敏感字段加密
-- 适合执行者：开发者
-- 核心价值：学会安全、灵活的配置管理
-- 可迁移方向：任何 Python 项目
-- 是否建议调用 skill-brick-writer：是
-
-### 候选 skill-brick 6：如何用进程隔离保护主服务不被长任务卡死
-
-- 来源模块：services.py 的 multiprocessing 隔离逻辑
-- 原项目中的执行流程：spawn 子进程 → 设置硬超时 → 超时 kill
-- 适合执行者：开发者
-- 核心价值：学会用进程隔离执行不可靠任务
-- 可迁移方向：需要执行外部请求或不可信代码的项目
-- 是否建议调用 skill-brick-writer：待确认
+| # | Brick | 来源模块 | 核心学到的概念 |
+| --- | --- | --- | --- |
+| 1 | [[Concept：Python 后端安全基础 — 密码哈希、对称加密与会话限速]] | auth.py | PBKDF2 不可逆存储 + Fernet 可逆加密 + 滑动窗口限速 |
+| 2 | [[Concept：Python 后台定时调度的实现模式]] | scheduler.py | 守护线程 + 30s 轮询 + 非阻塞锁 + 数据库配置 |
 
 ---
 
@@ -1034,15 +998,12 @@ _ingest_executor → _run_ingest_job()
 - 微信公众号 API 交互（非公开接口，需要维护 token/cookie）
 - 前端 HTML/JS 页面（与后端紧耦合）
 
-### 10.4 值得调用子 Skill 的地方
+### 10.4 已生成的 Brick
 
-以下候选值得交给 skill-brick-writer 正式生成：
+所有 6 个 Skill-brick 和 2 个 Concept-brick 已生成，详见 [[#9. 已生成的 Brick 清单]]。
 
-1. **如何用 pipeline.py 独立转换微信文章** — 实操价值最高
-2. **如何添加新的 AI Provider** — 学会适配器模式的实战应用
-3. **如何用模板变量做 AI 内容增强** — AI 工作流的核心模式
-4. **如何在 FastAPI 中添加 Bot 接入** — 多平台 Bot 的完整流程
-5. **如何设计分层配置系统** — Python 项目的通用能力
+> [!tip] 阅读建议
+> 先读 [[Skill：用 Pipeline 模式实现数据清洗与转换]] 和 [[Skill：给 Python 项目添加新的 AI Provider]]，这两个覆盖了项目最核心的两个设计模式。
 
 ---
 
@@ -1112,8 +1073,12 @@ _ingest_executor → _run_ingest_job()
 - AI 润色的模板变量系统
 
 **最值得调用 skill-brick-writer 的候选是：**
-1. "如何用 pipeline.py 独立转换微信文章"
-2. "如何给项目添加新的 AI Provider"
-3. "如何用模板变量系统做 AI 内容增强"
-4. "如何在 FastAPI 项目中添加 Bot 接入"
-5. "如何设计和使用分层配置系统"
+
+1. [[Skill：用 Pipeline 模式实现数据清洗与转换]] — 已生成
+2. [[Skill：给 Python 项目添加新的 AI Provider]] — 已生成
+3. [[Skill：用模板引擎实现 AI 生成内容与文本渲染]] — 已生成
+4. [[Skill：在 FastAPI 项目中添加 Bot 接入]] — 已生成
+5. [[Skill：给 Python 项目实现分层配置系统]] — 已生成
+6. [[Skill：用进程隔离执行耗时或高风险任务]] — 已生成
+7. [[Concept：Python 后端安全基础 — 密码哈希、对称加密与会话限速]] — 已生成
+8. [[Concept：Python 后台定时调度的实现模式]] — 已生成

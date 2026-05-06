@@ -16,7 +16,7 @@ input:
 output:
   - 可工作的分层配置系统，支持动态修改和加密存储
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -412,7 +412,7 @@ assert get_settings().fns_token == "my-secret-token"
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/config.py`（Settings dataclass、get_settings 函数、load/save_runtime_config 函数）
@@ -420,4 +420,4 @@ assert get_settings().fns_token == "my-secret-token"
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/config.py`、`app/auth.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/config.py`、`app/auth.py`

@@ -17,7 +17,7 @@ input:
 output:
   - 子进程的执行结果，或超时/崩溃的错误信息
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -384,7 +384,7 @@ print("正常执行测试通过")
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/services.py`（_invoke_isolated_worker 函数、_isolated_worker_entry 函数、execute_single_conversion 函数）
@@ -392,4 +392,4 @@ print("正常执行测试通过")
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/services.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/services.py`

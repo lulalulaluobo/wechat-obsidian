@@ -15,7 +15,7 @@ input:
 output:
   - 可工作的新 Provider 集成，上层代码无需任何改动
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -345,7 +345,7 @@ print(f"新 Provider 返回：{text[:100]}")
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/ai_adapters.py`
@@ -353,4 +353,4 @@ print(f"新 Provider 返回：{text[:100]}")
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/ai_adapters.py`、`app/config.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/ai_adapters.py`、`app/config.py`

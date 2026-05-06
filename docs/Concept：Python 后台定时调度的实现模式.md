@@ -10,7 +10,7 @@ tags:
   - python
 summary: 理解用 threading + Event + Lock 实现后台定时调度的模式：30 秒轮询循环、数据库存储调度配置、按频率判断是否到期、非阻塞锁防止重叠执行
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -203,7 +203,7 @@ stop_scheduler()           ← FastAPI lifespan 关闭时调用
 ## 6 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/scheduler.py`（174 行，完整实现）
@@ -211,4 +211,4 @@ stop_scheduler()           ← FastAPI lifespan 关闭时调用
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/scheduler.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/scheduler.py`

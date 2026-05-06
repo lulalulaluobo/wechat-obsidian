@@ -18,7 +18,7 @@ input:
 output:
   - 可工作的 Bot 接入，用户发消息后 Bot 能异步处理并回执结果
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -557,7 +557,7 @@ curl -X POST http://127.0.0.1:8765/api/integrations/xxx/webhook \
 ## 9 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/bot_workers.py`
@@ -568,4 +568,4 @@ curl -X POST http://127.0.0.1:8765/api/integrations/xxx/webhook \
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/bot_workers.py`、`app/services.py`、`app/api/routes.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/bot_workers.py`、`app/services.py`、`app/api/routes.py`

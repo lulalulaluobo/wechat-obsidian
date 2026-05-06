@@ -11,7 +11,7 @@ tags:
   - python
 summary: 理解 Python 后端安全的三块基石：PBKDF2 密码哈希（不可逆存储）、Fernet 对称加密（可逆敏感数据保护）、基于滑动窗口的登录限速（防暴力破解）
 source_wiki:
-  - "[[project-wiki]]"
+  - "[[wechat-md-server-wiki]]"
 created: 2026-05-06
 updated: 2026-05-06
 last_tested:
@@ -220,7 +220,7 @@ usable: true
 ## 6 来源
 
 相关 Wiki：
-- [[project-wiki]]
+- [[wechat-md-server-wiki]]
 
 外部参考：
 - wechat-md-server 项目源码 `app/auth.py`（193 行，完整实现）
@@ -229,4 +229,4 @@ usable: true
 
 ---
 
-**引用来源**：[[project-wiki]]、`app/auth.py`
+**引用来源**：[[wechat-md-server-wiki]]、`app/auth.py`
