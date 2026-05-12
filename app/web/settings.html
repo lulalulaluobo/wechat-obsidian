@@ -80,6 +80,13 @@
             <div class="field-hint text-muted" id="fns-token-meta"></div>
           </div>
         </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="search-fns-target-dir">主题搜索目标目录</label>
+            <input id="search-fns-target-dir" placeholder="00_Inbox/主题搜索">
+            <div class="field-hint" id="hint-search-fns-target-dir"></div>
+          </div>
+        </div>
         <div class="action-row">
           <button id="clear-fns-token" class="btn btn-danger">清空 Token</button>
           <button id="check-fns-btn" class="btn btn-secondary">检测 FNS 连接</button>
@@ -836,6 +843,9 @@
       "fns-target-dir": (v) => v
         ? { ok: true, text: "" }
         : { ok: false, text: "请输入目标目录" },
+      "search-fns-target-dir": (v) => v
+        ? { ok: true, text: "" }
+        : { ok: false, text: "请输入主题搜索目标目录" },
       "fns-token": (v) => !document.getElementById("fns-base-url").value.trim() || v || document.getElementById("fns-token-meta").textContent.includes("已配置")
         ? { ok: true, text: "" }
         : { ok: false, text: "启用 FNS 时需要 Token" },
@@ -1360,6 +1370,7 @@
         fns_base_url: document.getElementById("fns-base-url").value.trim(),
         fns_vault: document.getElementById("fns-vault").value.trim(),
         fns_target_dir: document.getElementById("fns-target-dir").value.trim(),
+        search_fns_target_dir: document.getElementById("search-fns-target-dir").value.trim(),
         cleanup_temp_on_success: document.getElementById("cleanup-on-success").checked,
         single_conversion_isolation_enabled: document.getElementById("single-conversion-isolation-enabled").checked,
         single_conversion_hard_timeout_seconds: Number(document.getElementById("single-conversion-hard-timeout-seconds").value || "180"),
@@ -1655,6 +1666,7 @@
         document.getElementById("fns-base-url").value = data.fns_base_url || "";
         document.getElementById("fns-vault").value = data.fns_vault || "";
         document.getElementById("fns-target-dir").value = data.fns_target_dir || "";
+        document.getElementById("search-fns-target-dir").value = data.search_fns_target_dir || "";
         document.getElementById("fns-token").value = "";
         document.getElementById("fns-token-meta").textContent = data.fns_token_configured ? `已配置：${data.fns_token_masked}` : "未配置";
         document.getElementById("cleanup-on-success").checked = Boolean(data.cleanup_temp_on_success);

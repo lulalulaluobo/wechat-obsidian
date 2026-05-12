@@ -1,6 +1,6 @@
 services:
   wechat-md-server:
-    image: lulalulaluobo/wechat-md-server:1.1.0
+    image: lulalulaluobo/wechat-md-server:1.1.2
     container_name: wechat-md-server
     user: "0:0"
     restart: unless-stopped
