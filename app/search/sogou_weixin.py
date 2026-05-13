@@ -24,7 +24,7 @@ def search_sogou_weixin(query: str, *, limit: int = 10) -> list[SearchResult]:
     normalized_query = str(query or "").strip()
     if not normalized_query:
         raise SearchProviderError("搜索关键词不能为空")
-    normalized_limit = max(10, min(50, int(limit or 10)))
+    normalized_limit = max(1, min(50, int(limit or 10)))
     session = requests.Session()
     results: list[SearchResult] = []
     seen_urls: set[str] = set()

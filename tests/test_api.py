@@ -122,8 +122,10 @@ class ApiTests(unittest.TestCase):
         self.assertIn("搜索关键词", response.text)
         self.assertIn("批量入库", response.text)
         self.assertIn('id="search-limit"', response.text)
-        self.assertIn('min="10"', response.text)
+        self.assertIn('min="1"', response.text)
         self.assertIn('max="50"', response.text)
+        self.assertIn('id="select-all-results"', response.text)
+        self.assertIn('id="invert-selection"', response.text)
         self.assertNotIn('id="search-provider"', response.text)
         self.assertNotIn("local_cache", response.text)
         self.assertNotIn("web_search", response.text)
@@ -540,6 +542,55 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mocked_search.call_args.kwargs["limit"], 50)
+
+    def test_search_wechat_respects_small_limit_after_filtering(self):
+        self._login()
+        from app.services import get_sync_store
+
+        get_sync_store().upsert_article(
+            {
+                "article_url": "https://mp.weixin.qq.com/s/search-ingested-small-limit",
+                "source_type": "wechat",
+                "is_ingested": True,
+                "fetch_status": "success",
+                "process_status": "success",
+            }
+        )
+        fake_results = [
+            {
+                "title": f"文章 {index}",
+                "url": url,
+                "source_name": "某公众号",
+                "published_at": "",
+                "snippet": "",
+                "provider": "sogou_weixin",
+                "score": None,
+            }
+            for index, url in enumerate(
+                [
+                    "https://mp.weixin.qq.com/s/search-ingested-small-limit",
+                    "https://mp.weixin.qq.com/s/search-new-1",
+                    "https://mp.weixin.qq.com/s/search-new-2",
+                    "https://mp.weixin.qq.com/s/search-new-3",
+                ],
+                start=1,
+            )
+        ]
+
+        with patch("app.api.routes.search_wechat_provider", return_value=fake_results) as mocked_search:
+            response = self.client.get("/api/search/wechat?q=AI&limit=2&provider=sogou_weixin")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mocked_search.call_args.kwargs["limit"], 2)
+        payload = response.json()
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(
+            [item["url"] for item in payload["results"]],
+            [
+                "https://mp.weixin.qq.com/s/search-new-1",
+                "https://mp.weixin.qq.com/s/search-new-2",
+            ],
+        )
 
     def test_search_wechat_only_returns_uningested_results(self):
         self._login()

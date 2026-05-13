@@ -41,8 +41,8 @@
       <div class="field-row">
         <div class="field">
           <label for="search-limit">返回数量</label>
-          <input id="search-limit" type="number" min="10" max="50" step="1" value="20">
-          <div class="text-muted" style="font-size:12px; margin-top:6px;">10 到 50 条，仅显示未入库文章。</div>
+          <input id="search-limit" type="number" min="1" max="50" step="1" value="20">
+          <div class="text-muted" style="font-size:12px; margin-top:6px;">1 到 50 条，仅显示未入库文章。</div>
         </div>
         <div class="field">
           <label>&nbsp;</label>
@@ -54,13 +54,15 @@
       </div>
       <div class="field-row">
         <div class="field">
-          <label>入库目标目录</label>
-          <div id="search-target-dir" class="text-muted" style="padding:12px 0;">加载中...</div>
+          <label for="search-target-dir">入库目标目录</label>
+          <input id="search-target-dir" placeholder="00_Inbox/主题搜索">
         </div>
       </div>
       <div class="action-row">
         <button id="search-submit" class="btn btn-primary">搜索</button>
         <button id="select-uningested" class="btn btn-secondary">选择未入库</button>
+        <button id="select-all-results" class="btn btn-secondary">全选</button>
+        <button id="invert-selection" class="btn btn-secondary">反选</button>
         <button id="clear-results" class="btn btn-ghost">清空结果</button>
         <button id="ingest-selected" class="btn btn-primary">批量入库</button>
       </div>
@@ -154,7 +156,7 @@
     document.getElementById("search-submit").addEventListener("click", async () => {
       const query = document.getElementById("search-query").value.trim();
       const rawLimit = Number(document.getElementById("search-limit").value || 20);
-      const limit = Math.max(10, Math.min(50, Number.isFinite(rawLimit) ? rawLimit : 20));
+      const limit = Math.max(1, Math.min(50, Number.isFinite(rawLimit) ? rawLimit : 20));
       const provider = "sogou_weixin";
       if (!query) {
         AdminUI.toast("请输入搜索关键词", "warn");
@@ -187,6 +189,18 @@
       });
     });
 
+    document.getElementById("select-all-results").addEventListener("click", () => {
+      document.querySelectorAll(".result-check:not(:disabled)").forEach((input) => {
+        input.checked = true;
+      });
+    });
+
+    document.getElementById("invert-selection").addEventListener("click", () => {
+      document.querySelectorAll(".result-check:not(:disabled)").forEach((input) => {
+        input.checked = !input.checked;
+      });
+    });
+
     document.getElementById("clear-results").addEventListener("click", () => {
       currentResults = [];
       renderResults();
@@ -201,7 +215,18 @@
         AdminUI.toast("请选择未入库文章", "warn");
         return;
       }
+      const targetDir = document.getElementById("search-target-dir").value.trim();
+      if (!targetDir) {
+        AdminUI.toast("请填写入库目标目录", "warn");
+        return;
+      }
       try {
+        await fetch("/api/admin/settings", {
+          method: "PUT",
+          headers: AdminUI.buildJsonHeaders(),
+          body: JSON.stringify({ search_fns_target_dir: targetDir }),
+        });
+        searchTargetDir = targetDir;
         const res = await fetch("/api/search/ingest", {
           method: "POST",
           headers: AdminUI.buildJsonHeaders(),
@@ -221,7 +246,7 @@
             { label: "接受", value: data.accepted },
             { label: "跳过", value: data.skipped },
             { label: "输出", value: data.output_target },
-            { label: "目标目录", value: searchTargetDir || "-" },
+            { label: "目标目录", value: document.getElementById("search-target-dir").value || "-" },
           ],
         }));
       } catch (error) {
@@ -249,17 +274,9 @@
           const config = await res.json();
           const targetDir = config.search_fns_target_dir || "00_Inbox/主题搜索";
           searchTargetDir = targetDir;
-          const outputTarget = config.default_output_target || "local";
-          const label = outputTarget === "fns"
-            ? `FNS → ${targetDir}`
-            : config.default_output_dir || "本地输出目录";
-          document.getElementById("search-target-dir").textContent = label;
-        } else {
-          document.getElementById("search-target-dir").textContent = "未知（配置加载失败）";
+          document.getElementById("search-target-dir").value = targetDir;
         }
-      } catch {
-        document.getElementById("search-target-dir").textContent = "未知";
-      }
+      } catch { /* ignore */ }
     });
   </script>
 </body>

@@ -63,6 +63,20 @@ class SearchProviderTests(unittest.TestCase):
 
         self.assertEqual(results, [])
 
+    def test_sogou_weixin_respects_limits_below_one_page(self):
+        html = "<ul class=\"news-list\">" + "".join(
+            f'<li><h3><a href="https://mp.weixin.qq.com/s/item-{index}">文章 {index}</a></h3></li>'
+            for index in range(8)
+        ) + "</ul>"
+        response = Mock(status_code=200, text=html)
+        response.raise_for_status.return_value = None
+
+        with patch("app.search.sogou_weixin.requests.Session", return_value=_mock_session(response=response)):
+            results = search_sogou_weixin("AI", limit=5)
+
+        self.assertEqual(len(results), 5)
+        self.assertEqual(results[-1]["url"], "https://mp.weixin.qq.com/s/item-4")
+
     def test_sogou_weixin_fetches_multiple_pages_for_larger_limits(self):
         page_one = Mock(status_code=200, text="""
         <ul class="news-list">

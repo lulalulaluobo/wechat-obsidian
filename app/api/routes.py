@@ -219,7 +219,7 @@ async def search_wechat(
     query = str(q or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="搜索关键词不能为空")
-    normalized_limit = max(10, min(50, int(limit or 10)))
+    normalized_limit = max(1, min(50, int(limit or 10)))
     normalized_provider = str(provider or "sogou_weixin").strip() or "sogou_weixin"
     if normalized_provider != "sogou_weixin":
         raise HTTPException(status_code=400, detail="provider 仅支持 sogou_weixin")
@@ -236,7 +236,7 @@ async def search_wechat(
         )
         raise HTTPException(status_code=400, detail=str(error)) from error
     annotated_results = store.annotate_search_results([dict(item) for item in results])
-    visible_results = [item for item in annotated_results if not item.get("already_ingested")]
+    visible_results = [item for item in annotated_results if not item.get("already_ingested")][:normalized_limit]
     search_record = store.create_search_query(
         query=query,
         provider=normalized_provider,
